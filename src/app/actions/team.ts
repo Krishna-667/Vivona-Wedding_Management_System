@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withService, withUser } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
+import { hashPassword } from "@/lib/auth/password";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -11,7 +12,7 @@ export interface ActionResult<T = unknown> {
 }
 
 /**
- * Invites employee account via Supabase Auth Admin (server-side only)
+ * Invites employee account
  */
 export async function inviteEmployeeAction(formData: {
   fullName: string;
@@ -24,42 +25,36 @@ export async function inviteEmployeeAction(formData: {
     return { ok: false, error: "Unauthorized. Admin role required." };
   }
 
-  const admin = createAdminClient();
   const demoPass = process.env.DEMO_PASSWORD || "ChangeMe-Demo#2026";
+  const hashedPassword = await hashPassword(demoPass);
 
-  // 1. Create auth user
-  const { data: authUser, error: authErr } = await admin.auth.admin.createUser({
-    email: formData.email,
-    password: demoPass,
-    email_confirm: true,
-    user_metadata: {
-      full_name: formData.fullName,
-      phone: formData.phone,
-    },
+  return withService(async (sql) => {
+    const [emp] = await sql`
+      INSERT INTO public.profiles (
+        email, full_name, role, phone, hourly_rate_paise, is_active
+      ) VALUES (
+        ${formData.email}, ${formData.fullName}, 'employee',
+        ${formData.phone || null}, ${formData.hourlyRatePaise}, true
+      )
+      ON CONFLICT (email) DO UPDATE SET
+        full_name = EXCLUDED.full_name,
+        role = 'employee',
+        phone = EXCLUDED.phone,
+        hourly_rate_paise = EXCLUDED.hourly_rate_paise,
+        is_active = true
+      RETURNING id
+    `;
+
+    await sql`
+      INSERT INTO private.auth_credentials (profile_id, password_hash)
+      VALUES (${emp.id}, ${hashedPassword})
+      ON CONFLICT (profile_id) DO UPDATE SET
+        password_hash = EXCLUDED.password_hash
+    `;
+
+    revalidatePath("/admin/team");
+    return { ok: true, data: { userId: emp.id } };
   });
-
-  if (authErr || !authUser?.user) {
-    return { ok: false, error: authErr?.message || "Failed to create user account." };
-  }
-
-  const userId = authUser.user.id;
-
-  // 2. Set profile role to employee
-  const { error: profileErr } = await admin.from("profiles").upsert({
-    id: userId,
-    role: "employee",
-    full_name: formData.fullName,
-    phone: formData.phone,
-    hourly_rate_paise: formData.hourlyRatePaise,
-    is_active: true,
-  });
-
-  if (profileErr) {
-    return { ok: false, error: profileErr.message };
-  }
-
-  revalidatePath("/admin/team");
-  return { ok: true, data: { userId } };
 }
 
 /**
@@ -75,58 +70,49 @@ export async function assignWeddingTeamAction(
     return { ok: false, error: "Unauthorized. Admin role required." };
   }
 
-  const admin = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    const [wedding] = await sql`
+      SELECT id, code, title FROM public.weddings WHERE id = ${weddingId}
+    `;
 
-  // 1. Fetch wedding
-  const { data: wedding } = await admin
-    .from("weddings")
-    .select("id, code, title")
-    .eq("id", weddingId)
-    .single();
+    if (!wedding) return { ok: false, error: "Wedding not found." };
 
-  if (!wedding) return { ok: false, error: "Wedding not found." };
+    await sql`
+      INSERT INTO public.wedding_assignments (
+        wedding_id, employee_id, assigned_by, role_on_wedding
+      ) VALUES (
+        ${weddingId}, ${employeeId}, ${session.profile.id}, ${roleOnWedding}
+      )
+      ON CONFLICT (wedding_id, employee_id) DO UPDATE SET
+        role_on_wedding = EXCLUDED.role_on_wedding,
+        assigned_by = EXCLUDED.assigned_by
+    `;
 
-  // 2. Insert or update assignment
-  const { error: assignErr } = await admin.from("wedding_assignments").upsert(
-    {
-      wedding_id: weddingId,
-      employee_id: employeeId,
-      assigned_by: session.user.id,
-      role_on_wedding: roleOnWedding,
-    },
-    { onConflict: "wedding_id,employee_id" }
-  );
+    await sql`
+      INSERT INTO public.notifications (user_id, title, body, type, data)
+      VALUES (
+        ${employeeId},
+        'Assigned to Wedding Operations',
+        ${`You have been assigned as ${roleOnWedding.replace(/_/g, " ")} for wedding ${wedding.code} (${wedding.title}).`},
+        'wedding_assigned',
+        ${sql.json({ wedding_id: weddingId, role: roleOnWedding })}
+      )
+    `;
 
-  if (assignErr) {
-    return { ok: false, error: assignErr.message };
-  }
+    await sql`
+      INSERT INTO public.audit_events (actor_id, action, entity_type, entity_id, new_data)
+      VALUES (
+        ${session.profile.id},
+        'ASSIGN_EMPLOYEE',
+        'wedding_assignments',
+        ${weddingId},
+        ${sql.json({ employee_id: employeeId, role: roleOnWedding })}
+      )
+    `;
 
-  // 3. Reassign tasks designated for that role if unassigned
-  await admin
-    .from("tasks")
-    .update({ owner_id: employeeId })
-    .eq("wedding_id", weddingId)
-    .eq("owner_id", session.user.id);
-
-  // 4. Notify employee
-  await admin.from("notifications").insert({
-    user_id: employeeId,
-    title: `Assigned to ${wedding.code}`,
-    body: `You have been assigned as ${roleOnWedding.replace(/_/g, " ")} for ${wedding.title}. Task board and operations console are now available.`,
-    type: "wedding_assigned",
-    data: { wedding_id: weddingId, role: roleOnWedding },
+    revalidatePath(`/admin/weddings/${weddingId}`);
+    revalidatePath(`/admin/team`);
+    revalidatePath(`/employee`);
+    return { ok: true };
   });
-
-  // 5. Audit log
-  await admin.from("audit_events").insert({
-    actor_id: session.user.id,
-    action: "ASSIGN_EMPLOYEE",
-    entity_type: "wedding_assignment",
-    entity_id: weddingId,
-    new_data: { employee_id: employeeId, role_on_wedding: roleOnWedding },
-  });
-
-  revalidatePath(`/admin/weddings/${weddingId}`);
-  revalidatePath(`/admin/team`);
-  return { ok: true };
 }

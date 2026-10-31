@@ -1,6 +1,6 @@
-import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { notFound, redirect } from "next/navigation";
 import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { ChatThread } from "@/components/features/chat/chat-thread";
 
 export const dynamic = "force-dynamic";
@@ -15,42 +15,53 @@ export default async function EmployeeWeddingMessagesPage({
   params: { id: string };
 }) {
   const session = await getSessionProfile();
-  const admin = createAdminClient();
+  if (!session) redirect("/login");
 
-  const { data: wedding } = await admin
-    .from("weddings")
-    .select("id, code, title")
-    .eq("id", params.id)
-    .single();
+  const data = await withUser(session.profile.id, async (sql) => {
+    const [wedding] = await sql`
+      SELECT id, code, title
+      FROM public.weddings
+      WHERE id = ${params.id}
+    `;
 
-  if (!wedding) notFound();
+    if (!wedding) return null;
 
-  // Fetch thread and messages
-  const { data: thread } = await admin
-    .from("message_threads")
-    .select("id")
-    .eq("wedding_id", params.id)
-    .maybeSingle();
+    const [thread] = await sql`
+      SELECT id FROM public.message_threads
+      WHERE wedding_id = ${params.id}
+      LIMIT 1
+    `;
 
-  let messages: any[] = [];
-  if (thread) {
-    const { data: msgData } = await admin
-      .from("messages")
-      .select("id, sender_id, body, created_at, profiles(full_name, role)")
-      .eq("thread_id", thread.id)
-      .order("created_at", { ascending: true });
-    messages = msgData || [];
-  }
+    let messages: any[] = [];
+    if (thread) {
+      messages = await sql`
+        SELECT 
+          m.id, 
+          m.sender_id, 
+          m.body, 
+          m.created_at,
+          json_build_object('full_name', p.full_name, 'role', p.role) as profiles
+        FROM public.messages m
+        LEFT JOIN public.profiles p ON p.id = m.sender_id
+        WHERE m.thread_id = ${thread.id}
+        ORDER BY m.created_at ASC
+      `;
+    }
+
+    return { wedding, messages };
+  });
+
+  if (!data || !data.wedding) notFound();
 
   return (
     <div className="max-w-4xl mx-auto">
       <ChatThread
-        weddingId={wedding.id}
-        weddingCode={wedding.code}
-        weddingTitle={wedding.title}
-        initialMessages={messages}
-        currentUserId={session?.user.id || ""}
-        currentRole={session?.profile.role || "employee"}
+        weddingId={data.wedding.id}
+        weddingCode={data.wedding.code}
+        weddingTitle={data.wedding.title}
+        initialMessages={data.messages}
+        currentUserId={session.profile.id}
+        currentRole={session.profile.role || "employee"}
       />
     </div>
   );

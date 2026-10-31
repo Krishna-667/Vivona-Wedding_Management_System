@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { notFound, redirect } from "next/navigation";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { ExtrasForm } from "./extras-form";
 
@@ -14,21 +15,28 @@ export default async function EmployeeWeddingExtrasPage({
 }: {
   params: { id: string };
 }) {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  if (!session) redirect("/login");
 
-  const [weddingRes, extrasRes] = await Promise.all([
-    admin.from("weddings").select("id, code, title").eq("id", params.id).single(),
-    admin
-      .from("extra_charges")
-      .select("*")
-      .eq("wedding_id", params.id)
-      .order("created_at", { ascending: false }),
-  ]);
+  const data = await withUser(session.profile.id, async (sql) => {
+    const [wedding] = await sql`
+      SELECT id, code, title FROM public.weddings WHERE id = ${params.id}
+    `;
+    if (!wedding) return null;
 
-  if (weddingRes.error || !weddingRes.data) notFound();
+    const extraCharges = await sql`
+      SELECT * FROM public.extra_charges
+      WHERE wedding_id = ${params.id}
+      ORDER BY created_at DESC
+    `;
 
-  const wedding = weddingRes.data;
-  const extraCharges = extrasRes.data || [];
+    return { wedding, extraCharges };
+  });
+
+  if (!data) notFound();
+
+  const wedding = data.wedding;
+  const extraCharges = data.extraCharges || [];
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto">

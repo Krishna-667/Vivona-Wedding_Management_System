@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { RunRemindersButton } from "./run-reminders-button";
 
@@ -10,17 +11,29 @@ export const metadata = {
 };
 
 export default async function AdminFinanceMasterPage() {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  const [weddingsRes, milestonesRes, extraChargesRes] = await Promise.all([
-    admin.from("weddings").select("id, code, title, venue, city, budget_paise").order("start_date", { ascending: true }),
-    admin.from("payment_milestones").select("wedding_id, amount_paise, paid_amount_paise, status"),
-    admin.from("extra_charges").select("wedding_id, total_paise, status"),
-  ]);
-
-  const weddings = weddingsRes.data || [];
-  const milestones = milestonesRes.data || [];
-  const extraCharges = extraChargesRes.data || [];
+  const { weddings, milestones, extraCharges } = await withUser(userId, async (sql) => {
+    const weddings = await sql`
+      SELECT id, code, title, venue, city, budget_paise
+      FROM public.weddings
+      ORDER BY start_date ASC
+    `;
+    const milestones = await sql`
+      SELECT wedding_id, amount_paise, paid_amount_paise, status
+      FROM public.payment_milestones
+    `;
+    const extraCharges = await sql`
+      SELECT wedding_id, total_paise, status
+      FROM public.extra_charges
+    `;
+    return {
+      weddings: weddings as any[],
+      milestones: milestones as any[],
+      extraCharges: extraCharges as any[],
+    };
+  });
 
   const totalRecognizedPaise = milestones.reduce((sum, m) => sum + Number(m.amount_paise), 0);
   const totalCollectedPaise = milestones.reduce((sum, m) => sum + Number(m.paid_amount_paise), 0);

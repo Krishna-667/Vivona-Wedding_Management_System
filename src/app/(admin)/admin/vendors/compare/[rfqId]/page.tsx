@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { VendorComparisonMatrix } from "@/components/features/admin/vendor-comparison-matrix";
 import type { ComparisonQuote } from "@/lib/procurement/comparison";
 
@@ -15,24 +16,43 @@ export default async function AdminRfqComparePage({
 }: {
   params: { rfqId: string };
 }) {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  // 1. Fetch RFQ with wedding details
-  const { data: rfq, error: rfqErr } = await admin
-    .from("rfqs")
-    .select("*, weddings(id, code, title, guest_count_planned)")
-    .eq("id", params.rfqId)
-    .single();
+  const data = await withUser(userId, async (sql) => {
+    const [rfq] = await sql`
+      SELECT 
+        r.*,
+        row_to_json(w.*) as weddings
+      FROM public.rfqs r
+      LEFT JOIN public.weddings w ON w.id = r.wedding_id
+      WHERE r.id = ${params.rfqId}
+    `;
 
-  if (rfqErr || !rfq) {
+    if (!rfq) return null;
+
+    const quotesData = await sql`
+      SELECT 
+        vq.*,
+        row_to_json(v.*) as vendors,
+        COALESCE((
+          SELECT json_agg(ql.*)
+          FROM public.quote_lines ql
+          WHERE ql.quote_id = vq.id
+        ), '[]') as quote_lines
+      FROM public.vendor_quotes vq
+      LEFT JOIN public.vendors v ON v.id = vq.vendor_id
+      WHERE vq.rfq_id = ${params.rfqId}
+    `;
+
+    return { rfq, quotesData };
+  });
+
+  if (!data || !data.rfq) {
     notFound();
   }
 
-  // 2. Fetch all quotes and line items
-  const { data: quotesData } = await admin
-    .from("vendor_quotes")
-    .select("*, vendors(id, name, city, category), quote_lines(*)")
-    .eq("rfq_id", params.rfqId);
+  const { rfq, quotesData } = data;
 
   const wedding = rfq.weddings as unknown as {
     id: string;

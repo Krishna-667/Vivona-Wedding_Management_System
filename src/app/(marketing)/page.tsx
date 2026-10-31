@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withAnon } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { GoldKnotIcon } from "@/components/ui/logo";
 import { BRAND } from "@/lib/brand";
@@ -85,20 +85,24 @@ const DEFAULT_PROOF = [
 async function getHomeData() {
   return fetchWithCache("home_page_data_cache", 300000, async () => {
     try {
-      const admin = createAdminClient();
-      const [pkgRes, spRes] = await Promise.all([
-        admin.from("packages").select("*").eq("is_active", true).order("display_order", { ascending: true }),
-        admin.from("social_proof").select("*").eq("featured", true).order("display_order", { ascending: true }).limit(3),
-      ]);
+      const [packages, socialProof] = await withAnon(async (sql) => {
+        const pkgs = await sql`
+          SELECT * FROM public.packages WHERE is_active = true ORDER BY display_order ASC
+        `;
+        const sp = await sql`
+          SELECT * FROM public.social_proof WHERE featured = true ORDER BY display_order ASC LIMIT 3
+        `;
+        return [pkgs, sp];
+      });
 
       return {
-        packages: (pkgRes.data && pkgRes.data.length > 0) ? pkgRes.data : DEFAULT_PACKAGES,
-        socialProof: (spRes.data && spRes.data.length > 0) ? spRes.data : DEFAULT_PROOF,
+        packages: (packages && packages.length > 0) ? (packages as unknown as Package[]) : (DEFAULT_PACKAGES as Package[]),
+        socialProof: (socialProof && socialProof.length > 0) ? (socialProof as unknown as SocialProof[]) : (DEFAULT_PROOF as SocialProof[]),
       };
     } catch {
       return {
-        packages: DEFAULT_PACKAGES,
-        socialProof: DEFAULT_PROOF,
+        packages: DEFAULT_PACKAGES as Package[],
+        socialProof: DEFAULT_PROOF as SocialProof[],
       };
     }
   });

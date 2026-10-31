@@ -1,6 +1,6 @@
-import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { notFound, redirect } from "next/navigation";
 import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { LiveEventConsole } from "@/components/features/live/live-event-console";
 import type { ScheduleEntry, VendorCheckin, Incident, Vendor } from "@/types/database";
 
@@ -16,32 +16,51 @@ export default async function EmployeeWeddingLivePage({
   params: { id: string };
 }) {
   const session = await getSessionProfile();
-  const admin = createAdminClient();
+  if (!session) redirect("/login");
 
-  const [weddingRes, scheduleRes, checkinsRes, incidentsRes] = await Promise.all([
-    admin.from("weddings").select("id, code, title, venue, city, start_date").eq("id", params.id).single(),
-    admin.from("schedule_entries").select("*").eq("wedding_id", params.id).order("start_time", { ascending: true }),
-    admin.from("vendor_checkins").select("*, vendors(*)").eq("wedding_id", params.id),
-    admin.from("incidents").select("*").eq("wedding_id", params.id).order("created_at", { ascending: false }),
-  ]);
+  const data = await withUser(session.profile.id, async (sql) => {
+    const [wedding] = await sql`
+      SELECT id, code, title, venue, city, start_date
+      FROM public.weddings WHERE id = ${params.id}
+    `;
+    if (!wedding) return null;
 
-  if (weddingRes.error || !weddingRes.data) {
+    const schedule = await sql`
+      SELECT * FROM public.schedule_entries
+      WHERE wedding_id = ${params.id}
+      ORDER BY start_time ASC
+    `;
+
+    const checkins = await sql`
+      SELECT 
+        vc.*,
+        row_to_json(v.*) as vendor
+      FROM public.vendor_checkins vc
+      LEFT JOIN public.vendors v ON v.id = vc.vendor_id
+      WHERE vc.wedding_id = ${params.id}
+    `;
+
+    const incidents = await sql`
+      SELECT * FROM public.incidents
+      WHERE wedding_id = ${params.id}
+      ORDER BY created_at DESC
+    `;
+
+    return { wedding, schedule, checkins, incidents };
+  });
+
+  if (!data || !data.wedding) {
     notFound();
   }
 
-  const checkins = (checkinsRes.data || []).map((c: any) => ({
-    ...c,
-    vendor: c.vendors as Vendor,
-  })) as Array<VendorCheckin & { vendor?: Vendor }>;
-
   return (
     <LiveEventConsole
-      wedding={weddingRes.data}
-      initialSchedule={(scheduleRes.data || []) as ScheduleEntry[]}
-      initialCheckins={checkins}
-      initialIncidents={(incidentsRes.data || []) as Incident[]}
-      userRole={session?.profile.role === "admin" ? "admin" : "employee"}
-      userId={session?.user.id || ""}
+      wedding={data.wedding as any}
+      initialSchedule={(data.schedule || []) as unknown as ScheduleEntry[]}
+      initialCheckins={(data.checkins || []) as any}
+      initialIncidents={(data.incidents || []) as unknown as Incident[]}
+      userRole={session.profile.role === "admin" ? "admin" : "employee"}
+      userId={session.profile.id}
     />
   );
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { EnquiryManager } from "@/components/features/admin/enquiry-manager";
 import type { Enquiry, EnquiryActivity, Proposal, Agreement } from "@/types/database";
@@ -16,25 +17,67 @@ export default async function AdminEnquiryDetailPage({
 }: {
   params: { id: string };
 }) {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  const [enqRes, actRes, propRes, agRes, teamRes] = await Promise.all([
-    admin.from("enquiries").select("*, packages(name, slug)").eq("id", params.id).single(),
-    admin.from("enquiry_activities").select("*").eq("enquiry_id", params.id).order("created_at", { ascending: false }),
-    admin.from("proposals").select("*, proposal_lines(*)").eq("enquiry_id", params.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    admin.from("agreements").select("*").eq("enquiry_id", params.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    admin.from("profiles").select("id, full_name, role").in("role", ["admin", "employee"]).eq("is_active", true),
-  ]);
+  const data = await withUser(userId, async (sql) => {
+    const [enquiry] = await sql`
+      SELECT 
+        e.*,
+        row_to_json(p.*) as packages
+      FROM public.enquiries e
+      LEFT JOIN public.packages p ON p.id = e.package_id
+      WHERE e.id = ${params.id}
+    `;
 
-  if (enqRes.error || !enqRes.data) {
+    if (!enquiry) return null;
+
+    const activities = await sql`
+      SELECT * FROM public.enquiry_activities
+      WHERE enquiry_id = ${params.id}
+      ORDER BY created_at DESC
+    `;
+
+    const [propData] = await sql`
+      SELECT 
+        pr.*,
+        COALESCE((
+          SELECT json_agg(pl.*)
+          FROM public.proposal_lines pl
+          WHERE pl.proposal_id = pr.id
+        ), '[]') as proposal_lines
+      FROM public.proposals pr
+      WHERE pr.enquiry_id = ${params.id}
+      ORDER BY pr.created_at DESC
+      LIMIT 1
+    `;
+
+    const [agreement] = await sql`
+      SELECT * FROM public.agreements
+      WHERE enquiry_id = ${params.id}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    const teamMembers = await sql`
+      SELECT id, full_name, role FROM public.profiles
+      WHERE role IN ('admin', 'employee') AND is_active = true
+    `;
+
+    return {
+      enquiry: enquiry as unknown as Enquiry & { packages?: { name: string; slug: string } | null },
+      activities: (activities || []) as unknown as EnquiryActivity[],
+      proposal: (propData || null) as unknown as (Proposal & { proposal_lines?: Array<any> }) | null,
+      agreement: (agreement || null) as unknown as Agreement | null,
+      teamMembers: (teamMembers || []) as unknown as Array<{ id: string; full_name: string; role: string }>,
+    };
+  });
+
+  if (!data || !data.enquiry) {
     notFound();
   }
 
-  const enquiry = enqRes.data as unknown as Enquiry & { packages?: { name: string; slug: string } | null };
-  const activities = (actRes.data || []) as EnquiryActivity[];
-  const proposal = propRes.data as unknown as (Proposal & { proposal_lines?: Array<any> }) | null;
-  const agreement = agRes.data as unknown as Agreement | null;
-  const teamMembers = (teamRes.data || []) as Array<{ id: string; full_name: string; role: string }>;
+  const { enquiry, activities, proposal, agreement, teamMembers } = data;
 
   return (
     <div className="space-y-8 max-w-6xl">

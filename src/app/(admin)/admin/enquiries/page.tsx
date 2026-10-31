@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import type { Enquiry, EnquiryStatus } from "@/types/database";
 
@@ -25,20 +26,23 @@ export default async function AdminEnquiriesPipelinePage({
 }: {
   searchParams: { status?: string };
 }) {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
   const activeFilter = searchParams.status || "all";
 
-  let query = admin
-    .from("enquiries")
-    .select("*, packages(name, slug)")
-    .order("created_at", { ascending: false });
+  const enquiries = await withUser(userId, async (sql) => {
+    return sql`
+      SELECT 
+        e.*,
+        row_to_json(p.*) as packages
+      FROM public.enquiries e
+      LEFT JOIN public.packages p ON p.id = e.package_id
+      ${activeFilter !== "all" ? sql`WHERE e.status = ${activeFilter}` : sql``}
+      ORDER BY e.created_at DESC
+    `;
+  });
 
-  if (activeFilter !== "all") {
-    query = query.eq("status", activeFilter);
-  }
-
-  const { data: enquiries } = await query;
-  const enquiryList = (enquiries || []) as Array<
+  const enquiryList = (enquiries || []) as unknown as Array<
     Enquiry & { packages?: { name: string; slug: string } | null }
   >;
 

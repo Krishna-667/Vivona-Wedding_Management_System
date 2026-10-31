@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
 import {
   recordCheckinAction,
   logIncidentAction,
@@ -35,10 +35,24 @@ export function LiveEventConsole({
   userRole,
   userId,
 }: LiveEventConsoleProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = React.useState<"timeline" | "checkins" | "incidents">("timeline");
   const [schedule, setSchedule] = React.useState<ScheduleEntry[]>(initialSchedule);
   const [checkins, setCheckins] = React.useState<Array<VendorCheckin & { vendor?: Vendor }>>(initialCheckins);
   const [incidents, setIncidents] = React.useState<Incident[]>(initialIncidents);
+
+  // Sync state from server refreshes
+  React.useEffect(() => {
+    setSchedule(initialSchedule);
+  }, [initialSchedule]);
+
+  React.useEffect(() => {
+    setCheckins(initialCheckins);
+  }, [initialCheckins]);
+
+  React.useEffect(() => {
+    setIncidents(initialIncidents);
+  }, [initialIncidents]);
 
   // Incident Modal State
   const [incidentModalOpen, setIncidentModalOpen] = React.useState(false);
@@ -57,52 +71,36 @@ export function LiveEventConsole({
   const [shiftMinutes, setShiftMinutes] = React.useState(15);
   const [submittingShift, setSubmittingShift] = React.useState(false);
 
-  // Supabase Realtime Subscription
+  // PostgreSQL LISTEN / SSE Subscription
   React.useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`live-wedding-${wedding.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "vendor_checkins",
-          filter: `wedding_id=eq.${wedding.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === "UPDATE") {
-            setCheckins((prev) =>
-              prev.map((c) => (c.id === payload.new.id ? { ...c, ...payload.new } : c))
-            );
+    if (!wedding.id) return;
+
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`/api/sse/${wedding.id}`);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (
+            payload.table === "vendor_checkins" ||
+            payload.table === "incidents" ||
+            payload.table === "schedule_entries"
+          ) {
+            router.refresh();
           }
+        } catch {
+          // heartbeat or unparseable
         }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "incidents",
-          filter: `wedding_id=eq.${wedding.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            setIncidents((prev) => [payload.new as Incident, ...prev]);
-            toast.error(`[INCIDENT] ${payload.new.title}`);
-          } else if (payload.eventType === "UPDATE") {
-            setIncidents((prev) =>
-              prev.map((inc) => (inc.id === payload.new.id ? (payload.new as Incident) : inc))
-            );
-          }
-        }
-      )
-      .subscribe();
+      };
+    } catch {
+      // EventSource fallback
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      eventSource?.close();
     };
-  }, [wedding.id]);
+  }, [wedding.id, router]);
 
   // Handlers
   const handleCheckin = async (checkinId: string, status: "arrived" | "late" | "no_show") => {

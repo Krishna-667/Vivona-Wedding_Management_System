@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import type { Wedding, Task, PaymentMilestone } from "@/types/database";
 
@@ -15,26 +16,67 @@ export default async function AdminWeddingDetailPage({
 }: {
   params: { id: string };
 }) {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  const [weddingRes, tasksRes, milestonesRes, assignmentsRes, teamRes] = await Promise.all([
-    admin.from("weddings").select("*, profiles!weddings_client_id_fkey(full_name, phone, email)").eq("id", params.id).single(),
-    admin.from("tasks").select("*, profiles!tasks_owner_id_fkey(full_name)").eq("wedding_id", params.id).order("due_date", { ascending: true }),
-    admin.from("payment_milestones").select("*").eq("wedding_id", params.id).order("due_date", { ascending: true }),
-    admin.from("wedding_assignments").select("*, profiles(full_name, role)").eq("wedding_id", params.id),
-    admin.from("profiles").select("id, full_name, role").in("role", ["admin", "employee"]).eq("is_active", true),
-  ]);
+  const data = await withUser(userId, async (sql) => {
+    const [wedding] = await sql`
+      SELECT 
+        w.*,
+        row_to_json(cp.*) as profiles
+      FROM public.weddings w
+      LEFT JOIN public.profiles cp ON cp.id = w.client_id
+      WHERE w.id = ${params.id}
+    `;
 
-  if (weddingRes.error || !weddingRes.data) {
+    if (!wedding) return null;
+
+    const tasks = await sql`
+      SELECT 
+        t.*,
+        row_to_json(p.*) as profiles
+      FROM public.tasks t
+      LEFT JOIN public.profiles p ON p.id = t.owner_id
+      WHERE t.wedding_id = ${params.id}
+      ORDER BY t.due_date ASC
+    `;
+
+    const milestones = await sql`
+      SELECT * FROM public.payment_milestones
+      WHERE wedding_id = ${params.id}
+      ORDER BY due_date ASC
+    `;
+
+    const assignments = await sql`
+      SELECT 
+        wa.*,
+        row_to_json(p.*) as profiles
+      FROM public.wedding_assignments wa
+      LEFT JOIN public.profiles p ON p.id = wa.employee_id
+      WHERE wa.wedding_id = ${params.id}
+    `;
+
+    const team = await sql`
+      SELECT id, full_name, role FROM public.profiles
+      WHERE role IN ('admin', 'employee') AND is_active = true
+    `;
+
+    return {
+      wedding: wedding as unknown as Wedding & {
+        profiles?: { full_name: string; phone: string; email: string } | null;
+      },
+      tasks: (tasks || []) as unknown as Array<Task & { profiles?: { full_name: string } | null }>,
+      milestones: (milestones || []) as unknown as PaymentMilestone[],
+      assignments: (assignments || []) as Array<any>,
+      team: (team || []) as Array<any>,
+    };
+  });
+
+  if (!data || !data.wedding) {
     notFound();
   }
 
-  const wedding = weddingRes.data as unknown as Wedding & {
-    profiles?: { full_name: string; phone: string; email: string } | null;
-  };
-  const tasks = (tasksRes.data || []) as unknown as Array<Task & { profiles?: { full_name: string } | null }>;
-  const milestones = (milestonesRes.data || []) as PaymentMilestone[];
-  const assignments = (assignmentsRes.data || []) as Array<any>;
+  const { wedding, tasks, milestones, assignments } = data;
 
   const doneCount = tasks.filter((t) => t.stage === "done").length;
   const progressPct = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0;

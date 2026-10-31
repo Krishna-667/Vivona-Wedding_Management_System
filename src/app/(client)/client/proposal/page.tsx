@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth/session";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { ProposalAcceptButton } from "@/components/features/client/proposal-accept-button";
 
@@ -27,23 +27,28 @@ export default async function ClientProposalPage() {
   let lines: ProposalLine[] = [];
 
   if (session) {
-    const admin = createAdminClient();
-    const { data: propData } = await admin
-      .from("proposals")
-      .select("*")
-      .eq("client_id", session.profile.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+    const data = await withUser(session.profile.id, async (sql) => {
+      const [propData] = await sql`
+        SELECT * FROM public.proposals
+        WHERE client_id = ${session.profile.id}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
 
-    if (propData) {
-      proposal = propData;
-      const { data: lineData } = await admin
-        .from("proposal_lines")
-        .select("*")
-        .eq("proposal_id", propData.id)
-        .order("display_order", { ascending: true });
-      if (lineData) lines = lineData as ProposalLine[];
+      let lineData: ProposalLine[] = [];
+      if (propData) {
+        lineData = await sql`
+          SELECT * FROM public.proposal_lines
+          WHERE proposal_id = ${propData.id}
+          ORDER BY display_order ASC
+        ` as unknown as ProposalLine[];
+      }
+      return { propData, lineData };
+    });
+
+    if (data.propData) {
+      proposal = data.propData;
+      lines = data.lineData;
     }
   }
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { fetchWithCache } from "@/lib/cache";
 import type { Wedding } from "@/types/database";
@@ -11,19 +12,38 @@ export const metadata = {
 };
 
 export default async function AdminWeddingsPage() {
-  const weddingList = await fetchWithCache("admin_weddings_list", 30000, async () => {
-    const admin = createAdminClient();
-    const { data: weddings } = await admin
-      .from("weddings")
-      .select("*, profiles!weddings_client_id_fkey(full_name, phone), wedding_assignments(employee_id, role_on_wedding, profiles(full_name))")
-      .order("start_date", { ascending: true });
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-    return (weddings || []) as Array<
-      Wedding & {
-        profiles?: { full_name: string; phone: string } | null;
-        wedding_assignments?: Array<{ employee_id: string; role_on_wedding: string; profiles?: { full_name: string } | null }>;
-      }
-    >;
+  const weddingList = await fetchWithCache("admin_weddings_list", 30000, async () => {
+    return withUser(userId, async (sql) => {
+      const rows = await sql`
+        SELECT 
+          w.*,
+          row_to_json(cp.*) as profiles,
+          COALESCE((
+            SELECT json_agg(
+              json_build_object(
+                'employee_id', wa.employee_id,
+                'role_on_wedding', wa.role_on_wedding,
+                'profiles', json_build_object('full_name', ep.full_name)
+              )
+            )
+            FROM public.wedding_assignments wa
+            LEFT JOIN public.profiles ep ON ep.id = wa.employee_id
+            WHERE wa.wedding_id = w.id
+          ), '[]') as wedding_assignments
+        FROM public.weddings w
+        LEFT JOIN public.profiles cp ON cp.id = w.client_id
+        ORDER BY w.start_date ASC
+      `;
+      return (rows || []) as unknown as Array<
+        Wedding & {
+          profiles?: { full_name: string; phone: string } | null;
+          wedding_assignments?: Array<{ employee_id: string; role_on_wedding: string; profiles?: { full_name: string } | null }>;
+        }
+      >;
+    });
   });
 
   return (

@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
 import { sendMessageAction } from "@/app/actions/employee";
 
 interface MessageItem {
@@ -33,55 +33,48 @@ export function ChatThread({
   currentUserId,
   currentRole,
 }: ChatThreadProps) {
+  const router = useRouter();
   const [messages, setMessages] = React.useState<MessageItem[]>(initialMessages);
   const [text, setText] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  // Sync initialMessages when updated via router.refresh()
+  React.useEffect(() => {
+    setMessages(initialMessages);
+  }, [initialMessages]);
 
   // Auto scroll to bottom
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Realtime subscription
+  // Server-Sent Events subscription (PostgreSQL LISTEN/NOTIFY)
   React.useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`chat-${weddingId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        async (payload) => {
-          const newMsg = payload.new as any;
-          // Fetch sender profile info
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("full_name, role")
-            .eq("id", newMsg.sender_id)
-            .single();
+    if (!weddingId || weddingId === "00000000-0000-0000-0000-000000000000") return;
 
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: newMsg.id,
-              sender_id: newMsg.sender_id,
-              body: newMsg.body,
-              created_at: newMsg.created_at,
-              profiles: profile || null,
-            },
-          ]);
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`/api/sse/${weddingId}`);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.table === "messages") {
+            router.refresh();
+          }
+        } catch {
+          // heartbeat or unparseable
         }
-      )
-      .subscribe();
+      };
+    } catch {
+      // EventSource fallback
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      eventSource?.close();
     };
-  }, [weddingId]);
+  }, [weddingId, router]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();

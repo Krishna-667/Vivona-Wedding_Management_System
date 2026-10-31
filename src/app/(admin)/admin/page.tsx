@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth/session";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { RunRemindersButton } from "@/components/features/admin/run-reminders-button";
 import { formatPaise } from "@/lib/utils";
 import { fetchWithCache } from "@/lib/cache";
@@ -13,6 +13,7 @@ export const metadata = {
 
 export default async function AdminDashboardPage() {
   const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
   // 1. Cached Database Queries (30s TTL)
   const {
@@ -23,45 +24,43 @@ export default async function AdminDashboardPage() {
     staleEnquiries,
     upcomingWeddings,
   } = await fetchWithCache("admin_dashboard_metrics_cache", 30000, async () => {
-    const admin = createAdminClient();
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
 
-    const [
-      todayEnqRes,
-      staleEnqRes,
-      activeWeddingsRes,
-      pendingMilestonesRes,
-      staleListRes,
-      upcomingWeddingsRes,
-    ] = await Promise.all([
-      admin.from("enquiries").select("id", { count: "exact", head: true }).gte("created_at", todayStart),
-      admin.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "new").lt("created_at", fortyEightHoursAgo),
-      admin.from("weddings").select("id", { count: "exact", head: true }).eq("status", "planning"),
-      admin.from("payment_milestones").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      admin
-        .from("enquiries")
-        .select("id, code, contact_name, contact_phone, city, guest_count, created_at, status")
-        .eq("status", "new")
-        .lt("created_at", fortyEightHoursAgo)
-        .order("created_at", { ascending: true })
-        .limit(5),
-      admin
-        .from("weddings")
-        .select("id, code, title, venue, city, start_date, end_date, guest_count_planned, status, budget_paise")
-        .order("start_date", { ascending: true })
-        .limit(5),
-    ]);
+    return withUser(userId, async (sql) => {
+      const [counts] = await sql`
+        SELECT 
+          (SELECT count(*) FROM public.enquiries WHERE created_at >= ${todayStart}) as new_today,
+          (SELECT count(*) FROM public.enquiries WHERE status = 'new' AND created_at < ${fortyEightHoursAgo}) as stale_count,
+          (SELECT count(*) FROM public.weddings WHERE status = 'planning') as active_weddings,
+          (SELECT count(*) FROM public.payment_milestones WHERE status = 'pending') as pending_milestones
+      `;
 
-    return {
-      newTodayCount: todayEnqRes.count ?? 0,
-      staleCount: staleEnqRes.count ?? 0,
-      activeWeddingsCount: activeWeddingsRes.count ?? 0,
-      pendingMilestonesCount: pendingMilestonesRes.count ?? 0,
-      staleEnquiries: staleListRes.data || [],
-      upcomingWeddings: upcomingWeddingsRes.data || [],
-    };
+      const staleList = await sql`
+        SELECT id, code, contact_name, contact_phone, city, guest_count, created_at, status
+        FROM public.enquiries
+        WHERE status = 'new' AND created_at < ${fortyEightHoursAgo}
+        ORDER BY created_at ASC
+        LIMIT 5
+      `;
+
+      const upcoming = await sql`
+        SELECT id, code, title, venue, city, start_date, end_date, guest_count_planned, status, budget_paise
+        FROM public.weddings
+        ORDER BY start_date ASC
+        LIMIT 5
+      `;
+
+      return {
+        newTodayCount: Number(counts.new_today ?? 0),
+        staleCount: Number(counts.stale_count ?? 0),
+        activeWeddingsCount: Number(counts.active_weddings ?? 0),
+        pendingMilestonesCount: Number(counts.pending_milestones ?? 0),
+        staleEnquiries: staleList as any[],
+        upcomingWeddings: upcoming as any[],
+      };
+    });
   });
 
   const metrics = [

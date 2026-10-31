@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth/session";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { fetchWithCache } from "@/lib/cache";
 import type { Wedding } from "@/types/database";
 
@@ -17,26 +17,55 @@ export default async function EmployeeDashboardPage() {
 
   if (session?.profile.role === "admin") {
     weddings = await fetchWithCache("employee_dash_admin_weddings", 30000, async () => {
-      const admin = createAdminClient();
-      const { data } = await admin
-        .from("weddings")
-        .select("*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status)")
-        .order("start_date", { ascending: true })
-        .limit(10);
-      return data || [];
+      return withUser(session.profile.id, async (sql) => {
+        const rows = await sql`
+          SELECT 
+            w.*,
+            COALESCE((
+              SELECT json_agg(json_build_object('id', t.id, 'stage', t.stage))
+              FROM public.tasks t WHERE t.wedding_id = w.id
+            ), '[]') as tasks,
+            COALESCE((
+              SELECT json_agg(json_build_object('id', i.id, 'status', i.status))
+              FROM public.incidents i WHERE i.wedding_id = w.id
+            ), '[]') as incidents,
+            COALESCE((
+              SELECT json_agg(json_build_object('id', m.id, 'title', m.title, 'status', m.status))
+              FROM public.payment_milestones m WHERE m.wedding_id = w.id
+            ), '[]') as payment_milestones
+          FROM public.weddings w
+          ORDER BY w.start_date ASC
+          LIMIT 10
+        `;
+        return rows as any[];
+      });
     });
   } else if (session) {
-    weddings = await fetchWithCache(`employee_dash_weddings_${session.user.id}`, 30000, async () => {
-      const admin = createAdminClient();
-      const { data: assignments } = await admin
-        .from("wedding_assignments")
-        .select("wedding_id, role_on_wedding, weddings(*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status))")
-        .eq("employee_id", session.user.id);
-
-      return (assignments || []).map((a) => ({
-        ...a.weddings,
-        role_on_wedding: a.role_on_wedding,
-      }));
+    weddings = await fetchWithCache(`employee_dash_weddings_${session.profile.id}`, 30000, async () => {
+      return withUser(session.profile.id, async (sql) => {
+        const rows = await sql`
+          SELECT 
+            w.*,
+            wa.role_on_wedding,
+            COALESCE((
+              SELECT json_agg(json_build_object('id', t.id, 'stage', t.stage))
+              FROM public.tasks t WHERE t.wedding_id = w.id
+            ), '[]') as tasks,
+            COALESCE((
+              SELECT json_agg(json_build_object('id', i.id, 'status', i.status))
+              FROM public.incidents i WHERE i.wedding_id = w.id
+            ), '[]') as incidents,
+            COALESCE((
+              SELECT json_agg(json_build_object('id', m.id, 'title', m.title, 'status', m.status))
+              FROM public.payment_milestones m WHERE m.wedding_id = w.id
+            ), '[]') as payment_milestones
+          FROM public.wedding_assignments wa
+          JOIN public.weddings w ON w.id = wa.wedding_id
+          WHERE wa.employee_id = ${session.profile.id}
+          ORDER BY w.start_date ASC
+        `;
+        return rows as any[];
+      });
     });
   }
 

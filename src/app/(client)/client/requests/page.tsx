@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth/session";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import type { Enquiry } from "@/types/database";
 
@@ -13,13 +13,14 @@ export default async function ClientRequestsPage() {
   let enquiries: Enquiry[] = [];
 
   if (session) {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from("enquiries")
-      .select("*")
-      .eq("client_id", session.profile.id)
-      .order("created_at", { ascending: false });
-    if (data) enquiries = data as Enquiry[];
+    enquiries = await withUser(session.profile.id, async (sql) => {
+      const rows = await sql`
+        SELECT * FROM public.enquiries
+        WHERE client_id = ${session.profile.id}
+        ORDER BY created_at DESC
+      `;
+      return rows as unknown as Enquiry[];
+    });
   }
 
   return (

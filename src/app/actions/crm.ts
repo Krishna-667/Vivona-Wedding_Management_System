@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
 import {
   canTransitionEnquiry,
@@ -33,47 +33,46 @@ export async function updateEnquiryStatusAction(
     return { ok: false, error: "Unauthorized. Admin role required." };
   }
 
-  const admin = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    // 1. Fetch current status
+    const [enquiry] = await sql`
+      SELECT id, code, status, client_id
+      FROM public.enquiries
+      WHERE id = ${enquiryId}
+    `;
 
-  // 1. Fetch current status
-  const { data: enquiry, error: fetchErr } = await admin
-    .from("enquiries")
-    .select("id, code, status, client_id")
-    .eq("id", enquiryId)
-    .single();
+    if (!enquiry) {
+      return { ok: false, error: "Enquiry record not found." };
+    }
 
-  if (fetchErr || !enquiry) {
-    return { ok: false, error: "Enquiry record not found." };
-  }
+    // 2. Guard state transition
+    const guard = canTransitionEnquiry(enquiry.status as EnquiryStatus, targetStatus);
+    if (!guard.valid) {
+      return { ok: false, error: guard.reason };
+    }
 
-  // 2. Guard state transition
-  const guard = canTransitionEnquiry(enquiry.status as EnquiryStatus, targetStatus);
-  if (!guard.valid) {
-    return { ok: false, error: guard.reason };
-  }
+    // 3. Update status
+    await sql`
+      UPDATE public.enquiries
+      SET status = ${targetStatus}, updated_at = NOW()
+      WHERE id = ${enquiryId}
+    `;
 
-  // 3. Update status
-  const { error: updateErr } = await admin
-    .from("enquiries")
-    .update({ status: targetStatus, updated_at: new Date().toISOString() })
-    .eq("id", enquiryId);
+    // 4. Log in enquiry_activities
+    await sql`
+      INSERT INTO public.enquiry_activities (
+        enquiry_id, actor_id, activity_type, description, metadata
+      ) VALUES (
+        ${enquiryId}, ${session.profile.id}, 'STATUS_CHANGE',
+        ${`Stage moved from "${enquiry.status}" to "${targetStatus}". ${notes ? `Notes: ${notes}` : ""}`},
+        ${sql.json({ previous_status: enquiry.status, next_status: targetStatus })}
+      )
+    `;
 
-  if (updateErr) {
-    return { ok: false, error: updateErr.message };
-  }
-
-  // 4. Log in enquiry_activities
-  await admin.from("enquiry_activities").insert({
-    enquiry_id: enquiryId,
-    actor_id: session.user.id,
-    activity_type: "STATUS_CHANGE",
-    description: `Stage moved from "${enquiry.status}" to "${targetStatus}". ${notes ? `Notes: ${notes}` : ""}`,
-    metadata: { previous_status: enquiry.status, next_status: targetStatus },
+    revalidatePath(`/admin/enquiries`);
+    revalidatePath(`/admin/enquiries/${enquiryId}`);
+    return { ok: true, data: { status: targetStatus } };
   });
-
-  revalidatePath(`/admin/enquiries`);
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
-  return { ok: true, data: { status: targetStatus } };
 }
 
 /**
@@ -92,47 +91,50 @@ export async function scheduleConsultationAction(
     return { ok: false, error: parsed.error.errors[0]?.message || "Invalid input." };
   }
 
-  const admin = createAdminClient();
   const { enquiryId, date, time, meetingType, notes } = parsed.data;
 
-  // 1. Fetch current enquiry
-  const { data: enquiry } = await admin
-    .from("enquiries")
-    .select("status, client_id, code")
-    .eq("id", enquiryId)
-    .single();
+  return withUser(session.profile.id, async (sql) => {
+    const [enquiry] = await sql`
+      SELECT status, client_id, code
+      FROM public.enquiries
+      WHERE id = ${enquiryId}
+    `;
 
-  if (!enquiry) return { ok: false, error: "Enquiry not found." };
+    if (!enquiry) return { ok: false, error: "Enquiry not found." };
 
-  // 2. Transition state to consultation_scheduled
-  await admin
-    .from("enquiries")
-    .update({ status: "consultation_scheduled", updated_at: new Date().toISOString() })
-    .eq("id", enquiryId);
+    await sql`
+      UPDATE public.enquiries
+      SET status = 'consultation_scheduled', updated_at = NOW()
+      WHERE id = ${enquiryId}
+    `;
 
-  // 3. Activity record
-  await admin.from("enquiry_activities").insert({
-    enquiry_id: enquiryId,
-    actor_id: session.user.id,
-    activity_type: "CONSULTATION_SCHEDULED",
-    description: `Consultation confirmed for ${date} at ${time} via ${meetingType.replace(/_/g, " ")}.`,
-    metadata: { date, time, meetingType, notes },
+    await sql`
+      INSERT INTO public.enquiry_activities (
+        enquiry_id, actor_id, activity_type, description, metadata
+      ) VALUES (
+        ${enquiryId}, ${session.profile.id}, 'CONSULTATION_SCHEDULED',
+        ${`Consultation confirmed for ${date} at ${time} via ${meetingType.replace(/_/g, " ")}.`},
+        ${sql.json({ date, time, meetingType, notes })}
+      )
+    `;
+
+    if (enquiry.client_id) {
+      await sql`
+        INSERT INTO public.notifications (user_id, title, body, type, data)
+        VALUES (
+          ${enquiry.client_id},
+          'Wedding Consultation Scheduled',
+          ${`Your royal wedding consultation is locked for ${date} at ${time}. Our lead planner will review themes and palace venue options.`},
+          'consultation_confirmed',
+          ${sql.json({ enquiry_code: enquiry.code, date, time })}
+        )
+      `;
+    }
+
+    revalidatePath(`/admin/enquiries/${enquiryId}`);
+    revalidatePath(`/admin/enquiries`);
+    return { ok: true };
   });
-
-  // 4. In-App Notification to Client
-  if (enquiry.client_id) {
-    await admin.from("notifications").insert({
-      user_id: enquiry.client_id,
-      title: "Wedding Consultation Scheduled",
-      body: `Your royal wedding consultation is locked for ${date} at ${time}. Our lead planner will review themes and palace venue options.`,
-      type: "consultation_confirmed",
-      data: { enquiry_code: enquiry.code, date, time },
-    });
-  }
-
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
-  revalidatePath(`/admin/enquiries`);
-  return { ok: true };
 }
 
 /**
@@ -144,18 +146,16 @@ export async function sendAgreementAction(enquiryId: string): Promise<ActionResu
     return { ok: false, error: "Unauthorized. Admin role required." };
   }
 
-  const admin = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    const [enquiry] = await sql`
+      SELECT id, code, client_id, contact_name, city, guest_count, budget_max_paise
+      FROM public.enquiries
+      WHERE id = ${enquiryId}
+    `;
 
-  const { data: enquiry } = await admin
-    .from("enquiries")
-    .select("id, code, client_id, contact_name, city, guest_count, budget_max_paise")
-    .eq("id", enquiryId)
-    .single();
+    if (!enquiry) return { ok: false, error: "Enquiry not found." };
 
-  if (!enquiry) return { ok: false, error: "Enquiry not found." };
-
-  // Legal agreement markdown contract
-  const contractBody = `# VIVONA LUXURY WEDDING MANAGEMENT AGREEMENT
+    const contractBody = `# VIVONA LUXURY WEDDING MANAGEMENT AGREEMENT
 **Parties:** Vivona Luxury Weddings ("Agency") and ${enquiry.contact_name} ("Client")  
 **Destination:** ${enquiry.city}  
 **Planned Capacity:** ${enquiry.guest_count} Guests  
@@ -175,69 +175,67 @@ export async function sendAgreementAction(enquiryId: string): Promise<ActionResu
 ### 3. Mutual Confidentiality & Agreement Gate
 The Client acknowledges that vendor rates, proprietary line items, and palace floor plans remain protected intellectual property accessible only upon e-signature execution of this Agreement.`;
 
-  // 1. Check if agreement already exists for enquiry
-  const { data: existingAgreement } = await admin
-    .from("agreements")
-    .select("id, version")
-    .eq("enquiry_id", enquiryId)
-    .single();
+    const [existingAgreement] = await sql`
+      SELECT id, version FROM public.agreements WHERE enquiry_id = ${enquiryId}
+    `;
 
-  let agreementId = existingAgreement?.id;
+    let agreementId: string;
 
-  if (existingAgreement) {
-    const nextVersion = existingAgreement.version + 1;
-    await admin
-      .from("agreements")
-      .update({
-        version: nextVersion,
-        body_markdown: contractBody,
-        status: "draft",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existingAgreement.id);
-  } else {
-    const { data: newAg } = await admin
-      .from("agreements")
-      .insert({
-        enquiry_id: enquiryId,
-        client_id: enquiry.client_id,
-        version: 1,
-        body_markdown: contractBody,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-    agreementId = newAg?.id;
-  }
+    if (existingAgreement) {
+      agreementId = existingAgreement.id;
+      await sql`
+        UPDATE public.agreements
+        SET
+          version = ${existingAgreement.version + 1},
+          body_markdown = ${contractBody},
+          status = 'draft',
+          updated_at = NOW()
+        WHERE id = ${existingAgreement.id}
+      `;
+    } else {
+      const [newAg] = await sql`
+        INSERT INTO public.agreements (
+          enquiry_id, client_id, version, body_markdown, status
+        ) VALUES (
+          ${enquiryId}, ${enquiry.client_id}, 1, ${contractBody}, 'draft'
+        )
+        RETURNING id
+      `;
+      agreementId = newAg.id;
+    }
 
-  // 2. Transition enquiry status to agreement_sent
-  await admin
-    .from("enquiries")
-    .update({ status: "agreement_sent", updated_at: new Date().toISOString() })
-    .eq("id", enquiryId);
+    await sql`
+      UPDATE public.enquiries
+      SET status = 'agreement_sent', updated_at = NOW()
+      WHERE id = ${enquiryId}
+    `;
 
-  // 3. Log Activity
-  await admin.from("enquiry_activities").insert({
-    enquiry_id: enquiryId,
-    actor_id: session.user.id,
-    activity_type: "AGREEMENT_SENT",
-    description: `Legal service agreement issued to client for digital e-signature execution.`,
+    await sql`
+      INSERT INTO public.enquiry_activities (
+        enquiry_id, actor_id, activity_type, description
+      ) VALUES (
+        ${enquiryId}, ${session.profile.id}, 'AGREEMENT_SENT',
+        'Legal service agreement issued to client for digital e-signature execution.'
+      )
+    `;
+
+    if (enquiry.client_id) {
+      await sql`
+        INSERT INTO public.notifications (user_id, title, body, type, data)
+        VALUES (
+          ${enquiry.client_id},
+          'Wedding Agreement Ready for Signature',
+          ${`Your Vivona service agreement (${enquiry.code}) is ready. Execute your digital signature on your phone to unlock vendor shortlists and floor plans.`},
+          'agreement_sent',
+          ${sql.json({ enquiry_id: enquiryId, agreement_id: agreementId })}
+        )
+      `;
+    }
+
+    revalidatePath(`/admin/enquiries/${enquiryId}`);
+    revalidatePath(`/admin/enquiries`);
+    return { ok: true, data: { agreementId } };
   });
-
-  // 4. In-App Notification
-  if (enquiry.client_id) {
-    await admin.from("notifications").insert({
-      user_id: enquiry.client_id,
-      title: "Wedding Agreement Ready for Signature",
-      body: `Your Vivona service agreement (${enquiry.code}) is ready. Execute your digital signature on your phone to unlock vendor shortlists and floor plans.`,
-      type: "agreement_sent",
-      data: { enquiry_id: enquiryId, agreement_id: agreementId },
-    });
-  }
-
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
-  revalidatePath(`/admin/enquiries`);
-  return { ok: true, data: { agreementId } };
 }
 
 /**
@@ -256,135 +254,117 @@ export async function createOrUpdateProposalAction(
     return { ok: false, error: parsed.error.errors[0]?.message || "Invalid proposal data." };
   }
 
-  const admin = createAdminClient();
   const { enquiryId, validDays, lines, paymentPlan, notes } = parsed.data;
 
-  // 1. Fetch enquiry
-  const { data: enquiry } = await admin
-    .from("enquiries")
-    .select("id, code, client_id")
-    .eq("id", enquiryId)
-    .single();
+  return withUser(session.profile.id, async (sql) => {
+    const [enquiry] = await sql`
+      SELECT id, code, client_id FROM public.enquiries WHERE id = ${enquiryId}
+    `;
 
-  if (!enquiry) return { ok: false, error: "Enquiry not found." };
+    if (!enquiry) return { ok: false, error: "Enquiry not found." };
 
-  // 2. Compute financial totals
-  let subtotalPaise = 0;
-  let taxPaise = 0;
+    let subtotalPaise = 0;
+    let taxPaise = 0;
 
-  lines.forEach((line) => {
-    const lineSubtotal = Math.round(line.qty * line.unitPricePaise);
-    const lineTax = Math.round((lineSubtotal * line.taxPct) / 100);
-    subtotalPaise += lineSubtotal;
-    taxPaise += lineTax;
-  });
-
-  const totalPaise = subtotalPaise + taxPaise;
-  const validUntilDate = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split("T")[0];
-
-  // 3. Upsert proposal record
-  const { data: existingProposal } = await admin
-    .from("proposals")
-    .select("id, version")
-    .eq("enquiry_id", enquiryId)
-    .single();
-
-  let proposalId: string;
-
-  if (existingProposal) {
-    proposalId = existingProposal.id;
-    await admin
-      .from("proposals")
-      .update({
-        version: existingProposal.version + 1,
-        valid_until: validUntilDate,
-        subtotal_paise: subtotalPaise,
-        tax_paise: taxPaise,
-        total_paise: totalPaise,
-        payment_plan: paymentPlan,
-        notes: notes || null,
-        status: "sent",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", proposalId);
-
-    // Delete old lines to replace with new itemization
-    await admin.from("proposal_lines").delete().eq("proposal_id", proposalId);
-  } else {
-    const { data: newProp, error: insertPropErr } = await admin
-      .from("proposals")
-      .insert({
-        enquiry_id: enquiryId,
-        version: 1,
-        valid_until: validUntilDate,
-        subtotal_paise: subtotalPaise,
-        tax_paise: taxPaise,
-        total_paise: totalPaise,
-        payment_plan: paymentPlan,
-        notes: notes || null,
-        status: "sent",
-      })
-      .select("id")
-      .single();
-
-    if (insertPropErr || !newProp) {
-      return { ok: false, error: "Failed to create proposal record." };
-    }
-    proposalId = newProp.id;
-  }
-
-  // 4. Insert lines
-  const lineRecords = lines.map((line, index) => {
-    const lineSubtotal = Math.round(line.qty * line.unitPricePaise);
-    const lineTax = Math.round((lineSubtotal * line.taxPct) / 100);
-    return {
-      proposal_id: proposalId,
-      category: line.category,
-      label: line.label,
-      qty: line.qty,
-      unit: line.unit,
-      unit_price_paise: line.unitPricePaise,
-      tax_pct: line.taxPct,
-      total_paise: lineSubtotal + lineTax,
-      display_order: index + 1,
-    };
-  });
-
-  await admin.from("proposal_lines").insert(lineRecords);
-
-  // 5. Update enquiry status to proposal_sent
-  await admin
-    .from("enquiries")
-    .update({ status: "proposal_sent", updated_at: new Date().toISOString() })
-    .eq("id", enquiryId);
-
-  // 6. Log activity
-  await admin.from("enquiry_activities").insert({
-    enquiry_id: enquiryId,
-    actor_id: session.user.id,
-    activity_type: "PROPOSAL_CREATED",
-    description: `Commercial proposal dispatched for ${lines.length} service modules (Total: ₹${(
-      totalPaise / 10000000
-    ).toFixed(2)} Lakh/Cr).`,
-    metadata: { totalPaise, lineCount: lines.length },
-  });
-
-  // 7. Notify client
-  if (enquiry.client_id) {
-    await admin.from("notifications").insert({
-      user_id: enquiry.client_id,
-      title: "Wedding Commercial Proposal Received",
-      body: `Your customized celebration proposal has been compiled by Devraj Rathore. Review and accept in your client portal.`,
-      type: "proposal_sent",
-      data: { enquiry_id: enquiryId, proposal_id: proposalId },
+    lines.forEach((line) => {
+      const lineSubtotal = Math.round(line.qty * line.unitPricePaise);
+      const lineTax = Math.round((lineSubtotal * line.taxPct) / 100);
+      subtotalPaise += lineSubtotal;
+      taxPaise += lineTax;
     });
-  }
 
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
-  revalidatePath(`/admin/enquiries`);
-  return { ok: true, data: { proposalId, totalPaise } };
+    const totalPaise = subtotalPaise + taxPaise;
+    const validUntilDate = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    const [existingProposal] = await sql`
+      SELECT id, version FROM public.proposals WHERE enquiry_id = ${enquiryId}
+    `;
+
+    let proposalId: string;
+
+    if (existingProposal) {
+      proposalId = existingProposal.id;
+      await sql`
+        UPDATE public.proposals
+        SET
+          version = ${existingProposal.version + 1},
+          valid_until = ${validUntilDate},
+          subtotal_paise = ${subtotalPaise},
+          tax_paise = ${taxPaise},
+          total_paise = ${totalPaise},
+          payment_plan = ${sql.json(paymentPlan)},
+          notes = ${notes || null},
+          status = 'sent',
+          updated_at = NOW()
+        WHERE id = ${proposalId}
+      `;
+      await sql`DELETE FROM public.proposal_lines WHERE proposal_id = ${proposalId}`;
+    } else {
+      const [newProp] = await sql`
+        INSERT INTO public.proposals (
+          enquiry_id, client_id, version, valid_until,
+          subtotal_paise, tax_paise, total_paise, payment_plan, notes, status
+        ) VALUES (
+          ${enquiryId}, ${enquiry.client_id}, 1, ${validUntilDate},
+          ${subtotalPaise}, ${taxPaise}, ${totalPaise}, ${sql.json(paymentPlan)}, ${notes || null}, 'sent'
+        )
+        RETURNING id
+      `;
+      proposalId = newProp.id;
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineSubtotal = Math.round(line.qty * line.unitPricePaise);
+      const lineTax = Math.round((lineSubtotal * line.taxPct) / 100);
+
+      await sql`
+        INSERT INTO public.proposal_lines (
+          proposal_id, category, label, qty, unit, unit_price_paise, tax_pct, total_paise, display_order
+        ) VALUES (
+          ${proposalId}, ${line.category}, ${line.label}, ${line.qty}, ${line.unit},
+          ${line.unitPricePaise}, ${line.taxPct}, ${lineSubtotal + lineTax}, ${i + 1}
+        )
+      `;
+    }
+
+    await sql`
+      UPDATE public.enquiries
+      SET status = 'proposal_sent', updated_at = NOW()
+      WHERE id = ${enquiryId}
+    `;
+
+    await sql`
+      INSERT INTO public.enquiry_activities (
+        enquiry_id, actor_id, activity_type, description, metadata
+      ) VALUES (
+        ${enquiryId}, ${session.profile.id}, 'PROPOSAL_CREATED',
+        ${`Commercial proposal dispatched for ${lines.length} service modules (Total: ₹${(
+          totalPaise / 10000000
+        ).toFixed(2)} Lakh/Cr).`},
+        ${sql.json({ totalPaise, lineCount: lines.length })}
+      )
+    `;
+
+    if (enquiry.client_id) {
+      await sql`
+        INSERT INTO public.notifications (user_id, title, body, type, data)
+        VALUES (
+          ${enquiry.client_id},
+          'Wedding Commercial Proposal Received',
+          'Your customized celebration proposal has been compiled by Devraj Rathore. Review and accept in your client portal.',
+          'proposal_sent',
+          ${sql.json({ enquiry_id: enquiryId, proposal_id: proposalId })}
+        )
+      `;
+    }
+
+    revalidatePath(`/admin/enquiries/${enquiryId}`);
+    revalidatePath(`/admin/enquiries`);
+    return { ok: true, data: { proposalId, totalPaise } };
+  });
 }
 
 /**
@@ -403,53 +383,45 @@ export async function recordBookingDepositAction(
     return { ok: false, error: parsed.error.errors[0]?.message || "Invalid deposit data." };
   }
 
-  const admin = createAdminClient();
   const { enquiryId, amountPaise, reference, paymentMethod, notes } = parsed.data;
 
-  // 1. Fetch enquiry
-  const { data: enquiry } = await admin
-    .from("enquiries")
-    .select("id, code, client_id, status")
-    .eq("id", enquiryId)
-    .single();
+  return withUser(session.profile.id, async (sql) => {
+    const [enquiry] = await sql`
+      SELECT id, code, client_id, status FROM public.enquiries WHERE id = ${enquiryId}
+    `;
 
-  if (!enquiry) return { ok: false, error: "Enquiry not found." };
+    if (!enquiry) return { ok: false, error: "Enquiry not found." };
 
-  // 2. Fetch accepted proposal
-  const { data: proposal } = await admin
-    .from("proposals")
-    .select("id, total_paise")
-    .eq("enquiry_id", enquiryId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+    await sql`
+      INSERT INTO public.enquiry_activities (
+        enquiry_id, actor_id, activity_type, description, metadata
+      ) VALUES (
+        ${enquiryId}, ${session.profile.id}, 'DEPOSIT_RECORDED',
+        ${`Booking deposit of ₹${(amountPaise / 100).toLocaleString(
+          "en-IN"
+        )} received via ${paymentMethod} (Ref: ${reference}).`},
+        ${sql.json({ amountPaise, reference, paymentMethod, notes })}
+      )
+    `;
 
-  // 3. Record in enquiry_activities
-  await admin.from("enquiry_activities").insert({
-    enquiry_id: enquiryId,
-    actor_id: session.user.id,
-    activity_type: "DEPOSIT_RECORDED",
-    description: `Booking deposit of ₹${(amountPaise / 100).toLocaleString(
-      "en-IN"
-    )} received via ${paymentMethod} (Ref: ${reference}).`,
-    metadata: { amountPaise, reference, paymentMethod, notes },
+    if (enquiry.client_id) {
+      await sql`
+        INSERT INTO public.notifications (user_id, title, body, type, data)
+        VALUES (
+          ${enquiry.client_id},
+          'Booking Deposit Received',
+          ${`Thank you! Your booking deposit of ₹${(amountPaise / 100).toLocaleString(
+            "en-IN"
+          )} has been recorded. Your wedding is now ready for formal confirmation.`},
+          'deposit_confirmed',
+          ${sql.json({ enquiry_code: enquiry.code, reference })}
+        )
+      `;
+    }
+
+    revalidatePath(`/admin/enquiries/${enquiryId}`);
+    return { ok: true, data: { amountPaise, reference } };
   });
-
-  // 4. In-App Notification
-  if (enquiry.client_id) {
-    await admin.from("notifications").insert({
-      user_id: enquiry.client_id,
-      title: "Booking Deposit Received",
-      body: `Thank you! Your booking deposit of ₹${(amountPaise / 100).toLocaleString(
-        "en-IN"
-      )} has been recorded. Your wedding is now ready for formal confirmation.`,
-      type: "deposit_confirmed",
-      data: { enquiry_code: enquiry.code, reference },
-    });
-  }
-
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
-  return { ok: true, data: { amountPaise, reference } };
 }
 
 /**
@@ -464,37 +436,30 @@ export async function confirmWeddingAction(
     return { ok: false, error: "Unauthorized. Admin role required." };
   }
 
-  const admin = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    const [row] = await sql`
+      SELECT public.confirm_wedding(${enquiryId}, ${assignedLeadId || null}) as res
+    `;
 
-  // Call the confirm_wedding database RPC
-  const { data, error } = await admin.rpc("confirm_wedding", {
-    p_enquiry_id: enquiryId,
-    p_assigned_lead_id: assignedLeadId || null,
+    const result = row?.res as {
+      ok: boolean;
+      wedding_id: string;
+      wedding_code: string;
+      tasks_count: number;
+    };
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/enquiries");
+    revalidatePath(`/admin/enquiries/${enquiryId}`);
+    revalidatePath("/admin/weddings");
+
+    return {
+      ok: true,
+      data: {
+        weddingId: result.wedding_id,
+        weddingCode: result.wedding_code,
+        taskCount: result.tasks_count,
+      },
+    };
   });
-
-  if (error) {
-    console.error("[confirm_wedding RPC error]", error);
-    return { ok: false, error: error.message };
-  }
-
-  const result = data as {
-    ok: boolean;
-    wedding_id: string;
-    wedding_code: string;
-    task_count: number;
-  };
-
-  revalidatePath("/admin");
-  revalidatePath("/admin/enquiries");
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
-  revalidatePath("/admin/weddings");
-
-  return {
-    ok: true,
-    data: {
-      weddingId: result.wedding_id,
-      weddingCode: result.wedding_code,
-      taskCount: result.task_count,
-    },
-  };
 }

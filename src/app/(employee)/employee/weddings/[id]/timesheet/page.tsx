@@ -1,6 +1,6 @@
-import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { notFound, redirect } from "next/navigation";
 import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { TimesheetForm } from "./timesheet-form";
 
@@ -16,21 +16,31 @@ export default async function EmployeeWeddingTimesheetPage({
   params: { id: string };
 }) {
   const session = await getSessionProfile();
-  const admin = createAdminClient();
+  if (!session) redirect("/login");
 
-  const [weddingRes, timesheetsRes] = await Promise.all([
-    admin.from("weddings").select("id, code, title").eq("id", params.id).single(),
-    admin
-      .from("timesheets")
-      .select("*, profiles(full_name, role)")
-      .eq("wedding_id", params.id)
-      .order("date", { ascending: false }),
-  ]);
+  const data = await withUser(session.profile.id, async (sql) => {
+    const [wedding] = await sql`
+      SELECT id, code, title FROM public.weddings WHERE id = ${params.id}
+    `;
+    if (!wedding) return null;
 
-  if (weddingRes.error || !weddingRes.data) notFound();
+    const timesheets = await sql`
+      SELECT 
+        ts.*,
+        json_build_object('full_name', p.full_name, 'role', p.role) as profiles
+      FROM public.timesheets ts
+      LEFT JOIN public.profiles p ON p.id = ts.employee_id
+      WHERE ts.wedding_id = ${params.id}
+      ORDER BY ts.date DESC
+    `;
 
-  const wedding = weddingRes.data;
-  const timesheets = timesheetsRes.data || [];
+    return { wedding, timesheets };
+  });
+
+  if (!data || !data.wedding) notFound();
+
+  const wedding = data.wedding;
+  const timesheets = (data.timesheets || []) as any[];
 
   const totalHours = timesheets.reduce((acc, t) => acc + Number(t.hours), 0);
   const totalCostPaise = timesheets.reduce(

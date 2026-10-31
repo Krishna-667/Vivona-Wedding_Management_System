@@ -6,6 +6,7 @@ const nextConfig = {
   swcMinify: true,
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns", "framer-motion"],
+    serverComponentsExternalPackages: ["@node-rs/argon2", "postgres"],
   },
   images: {
     remotePatterns: [

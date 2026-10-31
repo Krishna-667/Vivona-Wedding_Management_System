@@ -1,8 +1,8 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getSessionProfile } from "@/lib/auth/session";
 import { revalidatePath } from "next/cache";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 
 export interface ContentActionResult<T = unknown> {
   ok: boolean;
@@ -26,28 +26,26 @@ export async function updatePackageAction(
     return { ok: false, error: "Unauthorized: Admin privileges required." };
   }
 
-  const adminClient = createAdminClient();
-  const { error } = await adminClient
-    .from("packages")
-    .update({
-      name: payload.name,
-      tagline: payload.tagline || null,
-      description: payload.description || null,
-      starting_price_paise: payload.starting_price_paise,
-      inclusions: payload.inclusions,
-      is_active: payload.is_active,
-    })
-    .eq("id", packageId);
+  return withUser(session.profile.id, async (sql) => {
+    await sql`
+      UPDATE public.packages
+      SET
+        name = ${payload.name},
+        tagline = ${payload.tagline || null},
+        description = ${payload.description || null},
+        starting_price_paise = ${payload.starting_price_paise},
+        inclusions = ${sql.json(payload.inclusions)},
+        is_active = ${payload.is_active},
+        updated_at = NOW()
+      WHERE id = ${packageId}
+    `;
 
-  if (error) {
-    return { ok: false, error: error.message };
-  }
+    revalidatePath("/");
+    revalidatePath("/packages");
+    revalidatePath("/book");
 
-  revalidatePath("/");
-  revalidatePath("/packages");
-  revalidatePath("/book");
-
-  return { ok: true, data: undefined };
+    return { ok: true, data: undefined };
+  });
 }
 
 export async function createSocialProofAction(payload: {
@@ -65,30 +63,23 @@ export async function createSocialProofAction(payload: {
     return { ok: false, error: "Unauthorized: Admin privileges required." };
   }
 
-  const adminClient = createAdminClient();
-  const { data, error } = await adminClient
-    .from("social_proof")
-    .insert({
-      platform: payload.platform,
-      handle: payload.handle,
-      author_name: payload.author_name,
-      post_url: payload.post_url,
-      thumbnail_url: payload.thumbnail_url || null,
-      caption: payload.caption,
-      rating: payload.rating || 5,
-      featured: payload.featured,
-    })
-    .select("id")
-    .single();
+  return withUser(session.profile.id, async (sql) => {
+    const [row] = await sql`
+      INSERT INTO public.social_proof (
+        platform, handle, author_name, post_url, thumbnail_url, caption, rating, featured
+      ) VALUES (
+        ${payload.platform}, ${payload.handle}, ${payload.author_name},
+        ${payload.post_url}, ${payload.thumbnail_url || null}, ${payload.caption},
+        ${payload.rating || 5}, ${payload.featured}
+      )
+      RETURNING id
+    `;
 
-  if (error || !data) {
-    return { ok: false, error: error?.message || "Failed to create social proof citation." };
-  }
+    revalidatePath("/");
+    revalidatePath("/social-proof");
 
-  revalidatePath("/");
-  revalidatePath("/social-proof");
-
-  return { ok: true, data: { id: data.id } };
+    return { ok: true, data: { id: row.id } };
+  });
 }
 
 export async function deleteSocialProofAction(id: string): Promise<ContentActionResult<void>> {
@@ -97,14 +88,12 @@ export async function deleteSocialProofAction(id: string): Promise<ContentAction
     return { ok: false, error: "Unauthorized: Admin privileges required." };
   }
 
-  const adminClient = createAdminClient();
-  const { error } = await adminClient.from("social_proof").delete().eq("id", id);
-  if (error) {
-    return { ok: false, error: error.message };
-  }
+  return withUser(session.profile.id, async (sql) => {
+    await sql`DELETE FROM public.social_proof WHERE id = ${id}`;
 
-  revalidatePath("/");
-  revalidatePath("/social-proof");
+    revalidatePath("/");
+    revalidatePath("/social-proof");
 
-  return { ok: true, data: undefined };
+    return { ok: true, data: undefined };
+  });
 }

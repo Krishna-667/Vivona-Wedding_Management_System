@@ -1,5 +1,5 @@
 import { getSessionProfile } from "@/lib/auth/session";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { FounderDashboard } from "@/components/features/analytics/founder-dashboard";
 import { fetchWithCache } from "@/lib/cache";
 import type { Wedding } from "@/types/database";
@@ -11,27 +11,49 @@ export const metadata = {
 };
 
 export default async function AdminAnalyticsPage() {
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
+
   const { rawWeddings, allVendors, allCheckins, allTimesheets } = await fetchWithCache(
     "admin_analytics_raw_data",
     30000, // 30 seconds cache
     async () => {
-      const admin = createAdminClient();
-      const [weddingsRes, vendorsRes, checkinsRes, timesheetsRes] = await Promise.all([
-        admin
-          .from("weddings")
-          .select("*, payment_milestones(amount_paise), wedding_vendors(agreed_amount_paise), extra_charges(total_paise, status)")
-          .order("start_date", { ascending: true }),
-        admin.from("vendors").select("id, name, category").eq("is_active", true),
-        admin.from("vendor_checkins").select("*"),
-        admin.from("timesheets").select("wedding_id, hours, hourly_rate_paise"),
-      ]);
+      return withUser(userId, async (sql) => {
+        const rawWeddings = await sql`
+          SELECT 
+            w.*,
+            COALESCE((
+              SELECT json_agg(json_build_object('amount_paise', m.amount_paise))
+              FROM public.payment_milestones m WHERE m.wedding_id = w.id
+            ), '[]') as payment_milestones,
+            COALESCE((
+              SELECT json_agg(json_build_object('agreed_amount_paise', wv.agreed_amount_paise))
+              FROM public.wedding_vendors wv WHERE wv.wedding_id = w.id
+            ), '[]') as wedding_vendors,
+            COALESCE((
+              SELECT json_agg(json_build_object('total_paise', ec.total_paise, 'status', ec.status))
+              FROM public.extra_charges ec WHERE ec.wedding_id = w.id
+            ), '[]') as extra_charges
+          FROM public.weddings w
+          ORDER BY w.start_date ASC
+        `;
+        const allVendors = await sql`
+          SELECT id, name, category FROM public.vendors WHERE is_active = true
+        `;
+        const allCheckins = await sql`
+          SELECT * FROM public.vendor_checkins
+        `;
+        const allTimesheets = await sql`
+          SELECT wedding_id, hours, hourly_rate_paise FROM public.timesheets
+        `;
 
-      return {
-        rawWeddings: weddingsRes.data || [],
-        allVendors: vendorsRes.data || [],
-        allCheckins: checkinsRes.data || [],
-        allTimesheets: timesheetsRes.data || [],
-      };
+        return {
+          rawWeddings: rawWeddings as any[],
+          allVendors: allVendors as any[],
+          allCheckins: allCheckins as any[],
+          allTimesheets: allTimesheets as any[],
+        };
+      });
     }
   );
 

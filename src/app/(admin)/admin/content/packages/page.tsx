@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { PackageEditorCard } from "@/components/features/admin/package-editor-card";
 import type { Package } from "@/types/database";
 
@@ -10,13 +11,17 @@ export const metadata = {
 };
 
 export default async function AdminPackagesCMSPage() {
-  const admin = createAdminClient();
-  const { data: packages } = await admin
-    .from("packages")
-    .select("*")
-    .order("display_order", { ascending: true });
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  const pkgList = (packages || []) as Package[];
+  const packages = await withUser(userId, async (sql) => {
+    return sql`
+      SELECT * FROM public.packages
+      ORDER BY display_order ASC
+    `;
+  });
+
+  const pkgList = (packages || []) as unknown as Package[];
 
   return (
     <div className="space-y-8 max-w-4xl">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withAnon } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { GoldKnotIcon } from "@/components/ui/logo";
 import { fetchWithCache } from "@/lib/cache";
@@ -53,13 +53,14 @@ const DEFAULT_PACKAGES: Partial<Package>[] = [
 async function getPackages(): Promise<Partial<Package>[]> {
   return fetchWithCache("packages_page_data_cache", 300000, async () => {
     try {
-      const admin = createAdminClient();
-      const { data } = await admin
-        .from("packages")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order", { ascending: true });
-      if (data && data.length > 0) return data;
+      const data = await withAnon(async (sql) => {
+        return sql`
+          SELECT * FROM public.packages
+          WHERE is_active = true
+          ORDER BY display_order ASC
+        `;
+      });
+      if (data && data.length > 0) return data as unknown as Package[];
     } catch {
       // Fall back to defaults
     }

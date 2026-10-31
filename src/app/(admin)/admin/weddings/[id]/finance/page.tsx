@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { ReconciliationLedger } from "@/components/features/finance/reconciliation-ledger";
 import type { PaymentMilestone, ExtraCharge, WeddingVendor, Vendor } from "@/types/database";
 
@@ -14,23 +15,58 @@ export default async function AdminWeddingFinancePage({
 }: {
   params: { id: string };
 }) {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  const [weddingRes, milestonesRes, vendorsRes, extrasRes, timesheetsRes] = await Promise.all([
-    admin.from("weddings").select("id, code, title").eq("id", params.id).single(),
-    admin.from("payment_milestones").select("*").eq("wedding_id", params.id).order("due_date", { ascending: true }),
-    admin.from("wedding_vendors").select("*, vendors(*), vendor_bills(*), vendor_payments(*)").eq("wedding_id", params.id),
-    admin.from("extra_charges").select("*").eq("wedding_id", params.id).order("created_at", { ascending: false }),
-    admin.from("timesheets").select("hours, hourly_rate_paise").eq("wedding_id", params.id),
-  ]);
+  const data = await withUser(userId, async (sql) => {
+    const [wedding] = await sql`
+      SELECT id, code, title FROM public.weddings WHERE id = ${params.id}
+    `;
+    if (!wedding) return null;
 
-  if (weddingRes.error || !weddingRes.data) notFound();
+    const milestones = await sql`
+      SELECT * FROM public.payment_milestones
+      WHERE wedding_id = ${params.id}
+      ORDER BY due_date ASC
+    `;
 
-  const wedding = weddingRes.data;
-  const milestones = (milestonesRes.data || []) as PaymentMilestone[];
-  const rawVendors = vendorsRes.data || [];
-  const extraCharges = (extrasRes.data || []) as ExtraCharge[];
-  const timesheets = timesheetsRes.data || [];
+    const rawVendors = await sql`
+      SELECT 
+        wv.*,
+        row_to_json(v.*) as vendors,
+        COALESCE((
+          SELECT json_agg(vb.*)
+          FROM public.vendor_bills vb
+          WHERE vb.wedding_vendor_id = wv.id
+        ), '[]') as vendor_bills,
+        COALESCE((
+          SELECT json_agg(vp.*)
+          FROM public.vendor_payments vp
+          WHERE vp.wedding_vendor_id = wv.id
+        ), '[]') as vendor_payments
+      FROM public.wedding_vendors wv
+      LEFT JOIN public.vendors v ON v.id = wv.vendor_id
+      WHERE wv.wedding_id = ${params.id}
+    `;
+
+    const extraCharges = await sql`
+      SELECT * FROM public.extra_charges
+      WHERE wedding_id = ${params.id}
+      ORDER BY created_at DESC
+    `;
+
+    const timesheets = await sql`
+      SELECT hours, hourly_rate_paise
+      FROM public.timesheets
+      WHERE wedding_id = ${params.id}
+    `;
+
+    return { wedding, milestones, rawVendors, extraCharges, timesheets };
+  });
+
+  if (!data || !data.wedding) notFound();
+
+  const { wedding, milestones, rawVendors, extraCharges, timesheets } = data;
 
   const vendors = rawVendors.map((wv: any) => ({
     ...wv,
@@ -40,7 +76,7 @@ export default async function AdminWeddingFinancePage({
   })) as Array<WeddingVendor & { vendor?: Vendor; bills?: any[]; payments?: any[] }>;
 
   const labourCostPaise = timesheets.reduce(
-    (acc, t: any) => acc + Number(t.hours) * Number(t.hourly_rate_paise),
+    (acc: number, t: any) => acc + Number(t.hours) * Number(t.hourly_rate_paise),
     0
   );
 
@@ -50,9 +86,9 @@ export default async function AdminWeddingFinancePage({
         weddingId={wedding.id}
         weddingCode={wedding.code}
         weddingTitle={wedding.title}
-        milestones={milestones}
+        milestones={milestones as unknown as PaymentMilestone[]}
         vendors={vendors}
-        extraCharges={extraCharges}
+        extraCharges={extraCharges as unknown as ExtraCharge[]}
         labourCostPaise={labourCostPaise}
       />
     </div>

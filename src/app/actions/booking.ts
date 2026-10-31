@@ -1,9 +1,9 @@
 "use server";
 
 import { FullBookingSubmissionSchema, type FullBookingSubmission } from "@/lib/validation/booking";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withService } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
+import { hashPassword } from "@/lib/auth/password";
 import { sendEmail } from "@/lib/email/resend";
 import {
   renderEnquiryConfirmationEmail,
@@ -22,19 +22,13 @@ export interface BookingActionResult {
   fieldErrors?: Record<string, string[]>;
 }
 
-/**
- * Verify Cloudflare Turnstile token
- */
 async function verifyTurnstileToken(token?: string): Promise<boolean> {
   if (!token || token.trim() === "") {
     return false;
   }
-
-  // Use provided secret key or Cloudflare's official dummy testing secret key
   const secretKey =
     process.env.TURNSTILE_SECRET_KEY || "1x0000000000000000000000000000000AA";
 
-  // Cloudflare test tokens
   if (token === "dev-bypass-token" && process.env.NODE_ENV !== "production") {
     return true;
   }
@@ -53,7 +47,6 @@ async function verifyTurnstileToken(token?: string): Promise<boolean> {
     const data = await res.json();
     return !!data.success;
   } catch {
-    // If network fails in local non-production environment, allow fallback
     return process.env.NODE_ENV !== "production";
   }
 }
@@ -79,213 +72,166 @@ export async function createEnquiryAction(payload: unknown): Promise<BookingActi
     };
   }
 
-  const supabase = createClient();
-  const adminClient = createAdminClient();
+  return withService(async (sql) => {
+    // 2. Identify or create Client Account
+    let clientId: string | null = null;
+    const session = await getSessionProfile();
 
-  // 2. Identify or create Client Account
-  let clientId: string | null = null;
-  const session = await getSessionProfile();
-
-  if (session) {
-    clientId = session.profile.id;
-  } else {
-    // Check if user already exists with this email
-    const { data: userListData } = await adminClient.auth.admin.listUsers();
-    const existing = userListData?.users?.find(
-      (u) => u.email?.toLowerCase() === data.contactEmail.toLowerCase()
-    );
-
-    if (existing) {
-      clientId = existing.id;
+    if (session) {
+      clientId = session.profile.id;
     } else {
-      // Auto-create client user
-      const demoPass = process.env.DEMO_PASSWORD || "ChangeMe-Demo#2026";
-      const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
-        email: data.contactEmail,
-        password: demoPass,
-        email_confirm: true,
-        user_metadata: {
-          full_name: data.contactName,
-          phone: data.contactPhone,
-        },
-      });
+      const [existing] = await sql`
+        SELECT id FROM public.profiles WHERE LOWER(email) = LOWER(${data.contactEmail})
+      `;
 
-      if (!createError && newUser?.user) {
-        clientId = newUser.user.id;
-        // Upsert client profile
-        await adminClient.from("profiles").upsert({
-          id: clientId,
-          role: "client",
-          full_name: data.contactName,
-          phone: data.contactPhone,
-          hourly_rate_paise: 0,
-          is_active: true,
-        });
+      if (existing) {
+        clientId = existing.id;
+      } else {
+        const demoPass = process.env.DEMO_PASSWORD || "ChangeMe-Demo#2026";
+        const hashedPassword = await hashPassword(demoPass);
+
+        const [newUser] = await sql`
+          INSERT INTO public.profiles (
+            email, role, full_name, phone, is_active
+          ) VALUES (
+            ${data.contactEmail}, 'client', ${data.contactName}, ${data.contactPhone || null}, true
+          )
+          RETURNING id
+        `;
+
+        await sql`
+          INSERT INTO private.auth_credentials (profile_id, password_hash)
+          VALUES (${newUser.id}, ${hashedPassword})
+        `;
+
+        clientId = newUser.id;
       }
     }
-  }
 
-  // 3. Resolve package if package-based
-  let packageId: string | null = null;
-  if (data.type === "package" && data.packageSlug) {
-    const { data: pkgData } = await adminClient
-      .from("packages")
-      .select("id")
-      .eq("slug", data.packageSlug)
-      .single();
-    if (pkgData) {
-      packageId = pkgData.id;
+    // 3. Resolve package if package-based
+    let packageId: string | null = null;
+    if (data.type === "package" && data.packageSlug) {
+      const [pkg] = await sql`
+        SELECT id FROM public.packages WHERE slug = ${data.packageSlug}
+      `;
+      if (pkg) {
+        packageId = pkg.id;
+      }
     }
-  }
 
-  // 4. Generate unique enquiry reference code (e.g. ENQ-2026-XXXX)
-  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-  const enquiryCode = `ENQ-2026-${randomSuffix}`;
+    // 4. Generate unique enquiry reference code
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const enquiryCode = `ENQ-2026-${randomSuffix}`;
 
-  // 5. Idempotency Check: Don't duplicate if identical enquiry was submitted recently
-  const { data: recentDuplicate } = await adminClient
-    .from("enquiries")
-    .select("id, code")
-    .eq("contact_email", data.contactEmail)
-    .eq("preferred_start_date", data.preferredStartDate)
-    .eq("guest_count", data.guestCount)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+    // 5. Idempotency Check
+    const [recentDuplicate] = await sql`
+      SELECT id, code FROM public.enquiries
+      WHERE contact_email = ${data.contactEmail}
+        AND preferred_start_date = ${data.preferredStartDate}
+        AND guest_count = ${data.guestCount}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
 
-  if (recentDuplicate) {
+    if (recentDuplicate) {
+      return {
+        ok: true,
+        data: {
+          enquiryId: recentDuplicate.id,
+          code: recentDuplicate.code,
+          contactEmail: data.contactEmail,
+          message: "Your enquiry was already received and is under review by our executive team.",
+        },
+      };
+    }
+
+    // 6. Insert into enquiries
+    const [insertedEnquiry] = await sql`
+      INSERT INTO public.enquiries (
+        code, client_id, source, type, package_id, city,
+        preferred_start_date, preferred_end_date, guest_count,
+        theme, budget_max_paise, custom_services, status,
+        contact_name, contact_email, contact_phone, notes
+      ) VALUES (
+        ${enquiryCode}, ${clientId}, 'website_wizard', ${data.type}, ${packageId}, ${data.city},
+        ${data.preferredStartDate || null}, ${data.preferredEndDate || null}, ${data.guestCount},
+        ${data.theme || null}, ${data.budgetMaxPaise}, ${sql.json(data.customServices || [])}, 'new',
+        ${data.contactName}, ${data.contactEmail}, ${data.contactPhone}, ${data.notes || null}
+      )
+      RETURNING id, code
+    `;
+
+    // 7. Activity Timeline Record
+    await sql`
+      INSERT INTO public.enquiry_activities (
+        enquiry_id, actor_id, activity_type, description, metadata
+      ) VALUES (
+        ${insertedEnquiry.id}, ${clientId}, 'ENQUIRY_SUBMITTED',
+        ${`Submitted ${data.type} wedding plan for ${data.guestCount} guests in ${data.city}.`},
+        ${sql.json({
+          budget_max_paise: data.budgetMaxPaise,
+          theme: data.theme,
+          package_slug: data.packageSlug,
+        })}
+      )
+    `;
+
+    // 8. In-App Notifications
+    if (clientId) {
+      await sql`
+        INSERT INTO public.notifications (user_id, title, body, type, data)
+        VALUES (
+          ${clientId},
+          'Wedding Blueprint Received',
+          ${`Your request (${insertedEnquiry.code}) has been logged. Our lead planner will review dates and prepare your tailored proposal.`},
+          'enquiry_received',
+          ${sql.json({ enquiry_code: insertedEnquiry.code })}
+        )
+      `;
+    }
+
+    const adminProfiles = await sql`
+      SELECT id FROM public.profiles WHERE role = 'admin' AND is_active = true
+    `;
+
+    for (const adm of adminProfiles) {
+      await sql`
+        INSERT INTO public.notifications (user_id, title, body, type, data)
+        VALUES (
+          ${adm.id},
+          'New High-Value Enquiry',
+          ${`${data.contactName} submitted a ${data.type} plan in ${data.city} (${data.guestCount} guests, Ref: ${insertedEnquiry.code}).`},
+          'admin_new_enquiry',
+          ${sql.json({ enquiry_id: insertedEnquiry.id, code: insertedEnquiry.code })}
+        )
+      `;
+    }
+
+    // 9. Resend Email Dispatch (Non-blocking)
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const clientEmailData = renderEnquiryConfirmationEmail({
+      clientName: data.contactName,
+      enquiryCode: insertedEnquiry.code,
+      weddingType: data.type,
+      guestCount: data.guestCount,
+      city: data.city,
+      portalUrl: `${siteUrl}/login`,
+    });
+
+    sendEmail({
+      to: data.contactEmail,
+      subject: clientEmailData.subject,
+      html: clientEmailData.html,
+    }).catch(() => {});
+
     return {
       ok: true,
       data: {
-        enquiryId: recentDuplicate.id,
-        code: recentDuplicate.code,
+        enquiryId: insertedEnquiry.id,
+        code: insertedEnquiry.code,
         contactEmail: data.contactEmail,
-        message: "Your enquiry was already received and is under review by our executive team.",
+        message: "Your enquiry has been received. Check your email for login access to the client portal.",
       },
     };
-  }
-
-  // 6. Insert into enquiries
-  const { data: insertedEnquiry, error: insertError } = await adminClient
-    .from("enquiries")
-    .insert({
-      code: enquiryCode,
-      client_id: clientId,
-      source: "website_wizard",
-      type: data.type,
-      package_id: packageId,
-      city: data.city,
-      preferred_start_date: data.preferredStartDate,
-      preferred_end_date: data.preferredEndDate,
-      guest_count: data.guestCount,
-      theme: data.theme,
-      budget_max_paise: data.budgetMaxPaise,
-      custom_services: data.customServices,
-      status: "new",
-      contact_name: data.contactName,
-      contact_email: data.contactEmail,
-      contact_phone: data.contactPhone,
-      notes: data.notes || null,
-    })
-    .select("id, code")
-    .single();
-
-  if (insertError || !insertedEnquiry) {
-    return {
-      ok: false,
-      error: insertError?.message || "Failed to record enquiry. Please try again.",
-    };
-  }
-
-  // 7. Activity Timeline Record
-  await adminClient.from("enquiry_activities").insert({
-    enquiry_id: insertedEnquiry.id,
-    actor_id: clientId,
-    activity_type: "ENQUIRY_SUBMITTED",
-    description: `Submitted ${data.type} wedding plan for ${data.guestCount} guests in ${data.city}.`,
-    metadata: {
-      budget_max_paise: data.budgetMaxPaise,
-      theme: data.theme,
-      package_slug: data.packageSlug,
-    },
   });
-
-  // 8. In-App Notifications (Dual-Write for demo resilience)
-  if (clientId) {
-    await adminClient.from("notifications").insert({
-      user_id: clientId,
-      title: "Wedding Blueprint Received",
-      body: `Your request (${insertedEnquiry.code}) has been logged. Our lead planner will review dates and prepare your tailored proposal.`,
-      type: "enquiry_received",
-      data: { enquiry_code: insertedEnquiry.code },
-    });
-  }
-
-  // Notify Admins
-  const { data: adminProfiles } = await adminClient
-    .from("profiles")
-    .select("id")
-    .eq("role", "admin")
-    .eq("is_active", true);
-
-  if (adminProfiles && adminProfiles.length > 0) {
-    const adminNotifications = adminProfiles.map((adm) => ({
-      user_id: adm.id,
-      title: "New High-Value Enquiry",
-      body: `${data.contactName} submitted a ${data.type} plan in ${data.city} (${data.guestCount} guests, Ref: ${insertedEnquiry.code}).`,
-      type: "admin_new_enquiry",
-      data: { enquiry_id: insertedEnquiry.id, code: insertedEnquiry.code },
-    }));
-    await adminClient.from("notifications").insert(adminNotifications);
-  }
-
-  // 9. Resend Email Dispatch (Dual-Write resilience)
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-
-  // Dispatch Confirmation to Client
-  const clientEmailData = renderEnquiryConfirmationEmail({
-    clientName: data.contactName,
-    enquiryCode: insertedEnquiry.code,
-    weddingType: data.type,
-    guestCount: data.guestCount,
-    city: data.city,
-    portalUrl: `${siteUrl}/client`,
-  });
-
-  await sendEmail({
-    to: data.contactEmail,
-    subject: clientEmailData.subject,
-    html: clientEmailData.html,
-    text: clientEmailData.text,
-  });
-
-  // Dispatch Alert to Admin
-  const adminEmail = process.env.ADMIN_ALERT_EMAIL || "admin@vivona.demo";
-  const adminEmailData = renderAdminEnquiryAlertEmail({
-    clientName: data.contactName,
-    clientEmail: data.contactEmail,
-    clientPhone: data.contactPhone,
-    enquiryCode: insertedEnquiry.code,
-    city: data.city,
-    guestCount: data.guestCount,
-    type: data.type,
-    adminUrl: `${siteUrl}/admin/enquiries`,
-  });
-
-  await sendEmail({
-    to: adminEmail,
-    subject: adminEmailData.subject,
-    html: adminEmailData.html,
-    text: adminEmailData.text,
-  });
-
-  return {
-    ok: true,
-    data: {
-      enquiryId: insertedEnquiry.id,
-      code: insertedEnquiry.code,
-      contactEmail: data.contactEmail,
-      message: "Your royal wedding plan has been registered with Vivona concierge.",
-    },
-  };
 }

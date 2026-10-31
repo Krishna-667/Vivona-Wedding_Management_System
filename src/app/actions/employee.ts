@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
 import {
   UpdateTaskStageSchema,
@@ -22,36 +22,6 @@ export interface ActionResult<T = unknown> {
 }
 
 /**
- * Helper to assert employee is assigned to the wedding or is an admin
- */
-async function assertEmployeeAssigned(weddingId: string) {
-  const session = await getSessionProfile();
-  if (!session) throw new Error("Authentication required.");
-
-  if (session.profile.role === "admin") {
-    return { session, isAdmin: true };
-  }
-
-  if (session.profile.role !== "employee") {
-    throw new Error("Only employees or admins can perform this operation.");
-  }
-
-  const admin = createAdminClient();
-  const { data: assignment } = await admin
-    .from("wedding_assignments")
-    .select("id")
-    .eq("wedding_id", weddingId)
-    .eq("employee_id", session.user.id)
-    .maybeSingle();
-
-  if (!assignment) {
-    throw new Error("Unauthorized. You are not assigned to this wedding.");
-  }
-
-  return { session, isAdmin: false };
-}
-
-/**
  * 1. Update task stage (Kanban moves)
  */
 export async function updateTaskStageAction(
@@ -67,44 +37,32 @@ export async function updateTaskStageAction(
 
     UpdateTaskStageSchema.parse({ taskId, stage, notes });
 
-    const admin = createAdminClient();
-    const { data: task, error: fetchErr } = await admin
-      .from("tasks")
-      .select("wedding_id, title")
-      .eq("id", taskId)
-      .single();
+    return withUser(session.profile.id, async (sql) => {
+      const [task] = await sql`
+        SELECT wedding_id, title FROM public.tasks WHERE id = ${taskId}
+      `;
 
-    if (fetchErr || !task) return { ok: false, error: "Task not found." };
+      if (!task) return { ok: false, error: "Task not found." };
 
-    await assertEmployeeAssigned(task.wedding_id);
+      const completedAt = stage === "done" ? new Date().toISOString() : null;
 
-    const updateData: Record<string, unknown> = {
-      stage,
-      updated_at: new Date().toISOString(),
-    };
+      await sql`
+        UPDATE public.tasks
+        SET
+          stage = ${stage},
+          completed_at = ${completedAt},
+          notes = COALESCE(${notes || null}, notes),
+          updated_at = NOW()
+        WHERE id = ${taskId}
+      `;
 
-    if (stage === "done") {
-      updateData.completed_at = new Date().toISOString();
-    } else {
-      updateData.completed_at = null;
-    }
-
-    if (notes) {
-      updateData.notes = notes;
-    }
-
-    const { error: updateErr } = await admin
-      .from("tasks")
-      .update(updateData)
-      .eq("id", taskId);
-
-    if (updateErr) throw updateErr;
-
-    revalidatePath(`/employee/weddings/${task.wedding_id}/tasks`);
-    revalidatePath(`/admin/weddings/${task.wedding_id}`);
-    return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to update task stage." };
+      revalidatePath(`/employee/weddings/${task.wedding_id}/tasks`);
+      revalidatePath(`/admin/weddings/${task.wedding_id}`);
+      return { ok: true };
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to update task stage.";
+    return { ok: false, error: message };
   }
 }
 
@@ -117,37 +75,40 @@ export async function recordCheckinAction(
   notes?: string
 ): Promise<ActionResult> {
   try {
+    const session = await getSessionProfile();
+    if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
+      return { ok: false, error: "Unauthorized." };
+    }
+
     VendorCheckinSchema.parse({ checkinId, status, notes });
 
-    const admin = createAdminClient();
-    const { data: checkin, error: fetchErr } = await admin
-      .from("vendor_checkins")
-      .select("wedding_id, expected_at, grace_minutes")
-      .eq("id", checkinId)
-      .single();
+    return withUser(session.profile.id, async (sql) => {
+      const [checkin] = await sql`
+        SELECT wedding_id, expected_at, grace_minutes
+        FROM public.vendor_checkins
+        WHERE id = ${checkinId}
+      `;
 
-    if (fetchErr || !checkin) return { ok: false, error: "Check-in entry not found." };
+      if (!checkin) return { ok: false, error: "Check-in entry not found." };
 
-    await assertEmployeeAssigned(checkin.wedding_id);
+      const arrivedAt = status === "arrived" ? new Date().toISOString() : null;
 
-    const arrivedAt = status === "arrived" ? new Date().toISOString() : null;
+      await sql`
+        UPDATE public.vendor_checkins
+        SET
+          status = ${status},
+          arrived_at = ${arrivedAt},
+          notes = ${notes || null},
+          updated_at = NOW()
+        WHERE id = ${checkinId}
+      `;
 
-    const { error: updateErr } = await admin
-      .from("vendor_checkins")
-      .update({
-        status,
-        arrived_at: arrivedAt,
-        notes: notes || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", checkinId);
-
-    if (updateErr) throw updateErr;
-
-    revalidatePath(`/employee/weddings/${checkin.wedding_id}/live`);
-    return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to update vendor check-in." };
+      revalidatePath(`/employee/weddings/${checkin.wedding_id}/live`);
+      return { ok: true };
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to update vendor check-in.";
+    return { ok: false, error: message };
   }
 }
 
@@ -161,50 +122,48 @@ export async function logIncidentAction(
   description: string
 ): Promise<ActionResult> {
   try {
-    const { session } = await assertEmployeeAssigned(weddingId);
+    const session = await getSessionProfile();
+    if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
+      return { ok: false, error: "Unauthorized." };
+    }
 
     LogIncidentSchema.parse({ weddingId, title, severity, description });
 
-    const admin = createAdminClient();
-    const { data: incident, error } = await admin
-      .from("incidents")
-      .insert({
-        wedding_id: weddingId,
-        title,
-        severity,
-        description,
-        owner_id: session.user.id,
-        status: "open",
-      })
-      .select("id")
-      .single();
+    return withUser(session.profile.id, async (sql) => {
+      const [incident] = await sql`
+        INSERT INTO public.incidents (
+          wedding_id, title, severity, description, owner_id, status
+        ) VALUES (
+          ${weddingId}, ${title}, ${severity}, ${description}, ${session.profile.id}, 'open'
+        )
+        RETURNING id
+      `;
 
-    if (error) throw error;
+      if (severity === "critical" || severity === "high") {
+        const assignments = await sql`
+          SELECT employee_id FROM public.wedding_assignments WHERE wedding_id = ${weddingId}
+        `;
 
-    // If critical alert, notify all assigned employees and admin
-    if (severity === "critical" || severity === "high") {
-      const { data: assignments } = await admin
-        .from("wedding_assignments")
-        .select("employee_id")
-        .eq("wedding_id", weddingId);
-
-      const notifyRecipients = (assignments || []).map((a) => a.employee_id);
-
-      for (const empId of notifyRecipients) {
-        await admin.from("notifications").insert({
-          user_id: empId,
-          title: `[ALERT: ${severity.toUpperCase()}] Wedding Incident`,
-          body: `${title}: ${description}`,
-          type: "incident_alert",
-          data: { wedding_id: weddingId, incident_id: incident?.id },
-        });
+        for (const a of assignments) {
+          await sql`
+            INSERT INTO public.notifications (user_id, title, body, type, data)
+            VALUES (
+              ${a.employee_id},
+              ${`[ALERT: ${severity.toUpperCase()}] Wedding Incident`},
+              ${`${title}: ${description}`},
+              'incident_alert',
+              ${sql.json({ wedding_id: weddingId, incident_id: incident?.id })}
+            )
+          `;
+        }
       }
-    }
 
-    revalidatePath(`/employee/weddings/${weddingId}/live`);
-    return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to log incident." };
+      revalidatePath(`/employee/weddings/${weddingId}/live`);
+      return { ok: true };
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to log incident.";
+    return { ok: false, error: message };
   }
 }
 
@@ -216,35 +175,36 @@ export async function resolveIncidentAction(
   resolution: string
 ): Promise<ActionResult> {
   try {
+    const session = await getSessionProfile();
+    if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
+      return { ok: false, error: "Unauthorized." };
+    }
+
     ResolveIncidentSchema.parse({ incidentId, resolution });
 
-    const admin = createAdminClient();
-    const { data: incident, error: fetchErr } = await admin
-      .from("incidents")
-      .select("wedding_id")
-      .eq("id", incidentId)
-      .single();
+    return withUser(session.profile.id, async (sql) => {
+      const [incident] = await sql`
+        SELECT wedding_id FROM public.incidents WHERE id = ${incidentId}
+      `;
 
-    if (fetchErr || !incident) return { ok: false, error: "Incident not found." };
+      if (!incident) return { ok: false, error: "Incident not found." };
 
-    await assertEmployeeAssigned(incident.wedding_id);
+      await sql`
+        UPDATE public.incidents
+        SET
+          status = 'resolved',
+          resolution = ${resolution},
+          resolved_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${incidentId}
+      `;
 
-    const { error: updateErr } = await admin
-      .from("incidents")
-      .update({
-        status: "resolved",
-        resolution,
-        resolved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", incidentId);
-
-    if (updateErr) throw updateErr;
-
-    revalidatePath(`/employee/weddings/${incident.wedding_id}/live`);
-    return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to resolve incident." };
+      revalidatePath(`/employee/weddings/${incident.wedding_id}/live`);
+      return { ok: true };
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to resolve incident.";
+    return { ok: false, error: message };
   }
 }
 
@@ -257,24 +217,24 @@ export async function shiftScheduleAction(
   shiftMinutes: number
 ): Promise<ActionResult> {
   try {
-    await assertEmployeeAssigned(weddingId);
+    const session = await getSessionProfile();
+    if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
+      return { ok: false, error: "Unauthorized." };
+    }
+
     ShiftScheduleSchema.parse({ weddingId, fromEntryId, shiftMinutes });
 
-    const admin = createAdminClient();
+    return withUser(session.profile.id, async (sql) => {
+      const [row] = await sql`
+        SELECT public.shift_schedule_entries(${weddingId}, ${fromEntryId}, ${shiftMinutes}) as res
+      `;
 
-    // Call database RPC
-    const { data, error } = await admin.rpc("shift_schedule_entries", {
-      p_wedding_id: weddingId,
-      p_from_entry_id: fromEntryId,
-      p_shift_minutes: shiftMinutes,
+      revalidatePath(`/employee/weddings/${weddingId}/live`);
+      return { ok: true, data: row?.res };
     });
-
-    if (error) throw error;
-
-    revalidatePath(`/employee/weddings/${weddingId}/live`);
-    return { ok: true, data };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to shift schedule." };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to shift schedule.";
+    return { ok: false, error: message };
   }
 }
 
@@ -291,68 +251,44 @@ export async function sendMessageAction(
 
     SendMessageSchema.parse({ weddingId, body });
 
-    const admin = createAdminClient();
+    return withUser(session.profile.id, async (sql) => {
+      let [thread] = await sql`
+        SELECT id, client_id FROM public.message_threads WHERE wedding_id = ${weddingId}
+      `;
 
-    // Find or create thread
-    let { data: thread } = await admin
-      .from("message_threads")
-      .select("id, client_id")
-      .eq("wedding_id", weddingId)
-      .maybeSingle();
+      if (!thread) {
+        const [wedding] = await sql`
+          SELECT client_id FROM public.weddings WHERE id = ${weddingId}
+        `;
 
-    if (!thread) {
-      const { data: wedding } = await admin
-        .from("weddings")
-        .select("client_id")
-        .eq("id", weddingId)
-        .single();
+        if (!wedding) return { ok: false, error: "Wedding not found." };
 
-      if (!wedding) return { ok: false, error: "Wedding not found." };
-
-      const { data: newThread, error: createThreadErr } = await admin
-        .from("message_threads")
-        .insert({
-          wedding_id: weddingId,
-          client_id: wedding.client_id,
-        })
-        .select("id, client_id")
-        .single();
-
-      if (createThreadErr || !newThread) {
-        throw new Error("Failed to initialize message thread.");
+        const [newThread] = await sql`
+          INSERT INTO public.message_threads (wedding_id, client_id)
+          VALUES (${weddingId}, ${wedding.client_id})
+          RETURNING id, client_id
+        `;
+        thread = newThread;
       }
-      thread = newThread;
-    }
 
-    // Role guard: if employee, must be assigned
-    if (session.profile.role === "employee") {
-      await assertEmployeeAssigned(weddingId);
-    } else if (session.profile.role === "client") {
-      if (thread.client_id !== session.user.id) {
-        return { ok: false, error: "Unauthorized access to thread." };
-      }
-    }
+      await sql`
+        INSERT INTO public.messages (thread_id, sender_id, body)
+        VALUES (${thread.id}, ${session.profile.id}, ${body})
+      `;
 
-    // Insert message
-    const { error: msgErr } = await admin.from("messages").insert({
-      thread_id: thread.id,
-      sender_id: session.user.id,
-      body,
+      await sql`
+        UPDATE public.message_threads
+        SET updated_at = NOW()
+        WHERE id = ${thread.id}
+      `;
+
+      revalidatePath(`/employee/weddings/${weddingId}/messages`);
+      revalidatePath("/client/messages");
+      return { ok: true };
     });
-
-    if (msgErr) throw msgErr;
-
-    // Update thread updated_at
-    await admin
-      .from("message_threads")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", thread.id);
-
-    revalidatePath(`/employee/weddings/${weddingId}/messages`);
-    revalidatePath("/client/messages");
-    return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to send message." };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to send message.";
+    return { ok: false, error: message };
   }
 }
 
@@ -366,40 +302,39 @@ export async function logTimesheetAction(
   notes?: string
 ): Promise<ActionResult> {
   try {
-    const { session } = await assertEmployeeAssigned(weddingId);
+    const session = await getSessionProfile();
+    if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
+      return { ok: false, error: "Unauthorized." };
+    }
+
     LogTimesheetSchema.parse({ weddingId, date, hours, notes });
 
-    const admin = createAdminClient();
+    return withUser(session.profile.id, async (sql) => {
+      const [profile] = await sql`
+        SELECT hourly_rate_paise FROM public.profiles WHERE id = ${session.profile.id}
+      `;
 
-    // Fetch employee hourly rate
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("hourly_rate_paise")
-      .eq("id", session.user.id)
-      .single();
+      const hourlyRatePaise = profile?.hourly_rate_paise || 120000;
 
-    const hourlyRatePaise = profile?.hourly_rate_paise || 150000; // default ₹1,500/hr
+      await sql`
+        INSERT INTO public.timesheets (
+          wedding_id, employee_id, date, hours, hourly_rate_paise, notes
+        ) VALUES (
+          ${weddingId}, ${session.profile.id}, ${date}, ${hours}, ${hourlyRatePaise}, ${notes || null}
+        )
+      `;
 
-    const { error: insertErr } = await admin.from("timesheets").insert({
-      wedding_id: weddingId,
-      employee_id: session.user.id,
-      date,
-      hours,
-      hourly_rate_paise: hourlyRatePaise,
-      notes: notes || null,
+      revalidatePath(`/employee/weddings/${weddingId}/timesheet`);
+      return { ok: true };
     });
-
-    if (insertErr) throw insertErr;
-
-    revalidatePath(`/employee/weddings/${weddingId}/timesheet`);
-    return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to log timesheet." };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to log timesheet.";
+    return { ok: false, error: message };
   }
 }
 
 /**
- * 8. Request on-ground extra charge (e.g. 60 extra guest plates)
+ * 8. Request on-ground extra charge
  */
 export async function requestExtraChargeAction(
   weddingId: string,
@@ -409,31 +344,32 @@ export async function requestExtraChargeAction(
   reason: string
 ): Promise<ActionResult> {
   try {
-    const { session } = await assertEmployeeAssigned(weddingId);
+    const session = await getSessionProfile();
+    if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
+      return { ok: false, error: "Unauthorized." };
+    }
+
     RequestExtraChargeSchema.parse({ weddingId, title, qty, unitPriceRupees, reason });
 
-    const admin = createAdminClient();
     const unitPricePaise = Math.round(unitPriceRupees * 100);
     const totalPaise = Math.round(qty * unitPricePaise);
 
-    const { error: insertErr } = await admin.from("extra_charges").insert({
-      wedding_id: weddingId,
-      requested_by: session.user.id,
-      kind: "client_extra",
-      title,
-      qty,
-      unit_price_paise: unitPricePaise,
-      total_paise: totalPaise,
-      reason,
-      status: "requested",
+    return withUser(session.profile.id, async (sql) => {
+      await sql`
+        INSERT INTO public.extra_charges (
+          wedding_id, requested_by, kind, title, qty, unit_price_paise, total_paise, reason, status
+        ) VALUES (
+          ${weddingId}, ${session.profile.id}, 'client_extra', ${title}, ${qty},
+          ${unitPricePaise}, ${totalPaise}, ${reason}, 'requested'
+        )
+      `;
+
+      revalidatePath(`/employee/weddings/${weddingId}/extras`);
+      revalidatePath(`/admin/weddings/${weddingId}`);
+      return { ok: true };
     });
-
-    if (insertErr) throw insertErr;
-
-    revalidatePath(`/employee/weddings/${weddingId}/extras`);
-    revalidatePath(`/admin/weddings/${weddingId}`);
-    return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Failed to request extra charge." };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to request extra charge.";
+    return { ok: false, error: message };
   }
 }

@@ -1,9 +1,10 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getSessionProfile } from "@/lib/auth/session";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { revalidatePath } from "next/cache";
+import { withUser } from "@/lib/db/with-user";
+import { getSessionProfile } from "@/lib/auth/session";
 
 export interface ClientActionResult<T = unknown> {
   ok: boolean;
@@ -14,61 +15,59 @@ export interface ClientActionResult<T = unknown> {
 /**
  * Accept a proposal
  */
-export async function acceptProposalAction(proposalId: string): Promise<ClientActionResult<{ proposalId: string }>> {
+export async function acceptProposalAction(
+  proposalId: string
+): Promise<ClientActionResult<{ proposalId: string }>> {
   const session = await getSessionProfile();
   if (!session) {
     return { ok: false, error: "Unauthorized. Please sign in." };
   }
 
-  const adminClient = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    const [proposal] = await sql`
+      SELECT id, enquiry_id, client_id, version, total_paise
+      FROM public.proposals
+      WHERE id = ${proposalId}
+    `;
 
-  // Verify ownership or admin
-  const { data: proposal, error: fetchError } = await adminClient
-    .from("proposals")
-    .select("id, enquiry_id, client_id, version, total_paise")
-    .eq("id", proposalId)
-    .single();
+    if (!proposal) {
+      return { ok: false, error: "Proposal not found." };
+    }
 
-  if (fetchError || !proposal) {
-    return { ok: false, error: "Proposal not found." };
-  }
+    if (session.profile.role !== "admin" && proposal.client_id !== session.profile.id) {
+      return { ok: false, error: "Access denied. You do not own this proposal." };
+    }
 
-  if (session.profile.role !== "admin" && proposal.client_id !== session.profile.id) {
-    return { ok: false, error: "Access denied. You do not own this proposal." };
-  }
+    await sql`
+      UPDATE public.proposals
+      SET status = 'accepted', updated_at = NOW()
+      WHERE id = ${proposalId}
+    `;
 
-  // Update status to accepted
-  const { error: updateError } = await adminClient
-    .from("proposals")
-    .update({ status: "accepted" })
-    .eq("id", proposalId);
+    await sql`
+      INSERT INTO public.enquiry_activities (
+        enquiry_id, actor_id, activity_type, description
+      ) VALUES (
+        ${proposal.enquiry_id}, ${session.profile.id}, 'PROPOSAL_ACCEPTED',
+        ${`Accepted wedding proposal (v${proposal.version}) for ₹${Number(proposal.total_paise) / 100}. Ready for booking deposit.`}
+      )
+    `;
 
-  if (updateError) {
-    return { ok: false, error: updateError.message };
-  }
+    await sql`
+      INSERT INTO public.notifications (user_id, title, body, type)
+      VALUES (
+        ${proposal.client_id},
+        'Proposal Accepted',
+        ${`You have formally accepted Proposal v${proposal.version}. Our admin will issue the booking deposit receipt to confirm your wedding.`},
+        'proposal_accepted'
+      )
+    `;
 
-  // Add activity log
-  await adminClient.from("enquiry_activities").insert({
-    enquiry_id: proposal.enquiry_id,
-    actor_id: session.profile.id,
-    activity_type: "PROPOSAL_ACCEPTED",
-    description: `Accepted wedding proposal (v${proposal.version}) for ₹${Number(proposal.total_paise) / 100}. Ready for booking deposit.`,
+    revalidatePath("/client");
+    revalidatePath("/client/proposal");
+
+    return { ok: true, data: { proposalId } };
   });
-
-  // Notify client and admin
-  await adminClient.from("notifications").insert([
-    {
-      user_id: proposal.client_id,
-      title: "Proposal Accepted",
-      body: `You have formally accepted Proposal v${proposal.version}. Our admin will issue the booking deposit receipt to confirm your wedding.`,
-      type: "proposal_accepted",
-    },
-  ]);
-
-  revalidatePath("/client");
-  revalidatePath("/client/proposal");
-
-  return { ok: true, data: { proposalId } };
 }
 
 /**
@@ -97,83 +96,104 @@ export async function signAgreementAction(payload: {
     return { ok: false, error: "Valid touch signature drawing required." };
   }
 
-  const adminClient = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    const [agreement] = await sql`
+      SELECT id, wedding_id, client_id, version, status
+      FROM public.agreements
+      WHERE id = ${payload.agreementId}
+    `;
 
-  // Verify agreement ownership
-  const { data: agreement, error: fetchError } = await adminClient
-    .from("agreements")
-    .select("id, wedding_id, client_id, version, status")
-    .eq("id", payload.agreementId)
-    .single();
+    if (!agreement) {
+      return { ok: false, error: "Agreement not found." };
+    }
 
-  if (fetchError || !agreement) {
-    return { ok: false, error: "Agreement not found." };
-  }
+    if (session.profile.role !== "admin" && agreement.client_id !== session.profile.id) {
+      return { ok: false, error: "Access denied. You cannot sign another client's agreement." };
+    }
 
-  if (session.profile.role !== "admin" && agreement.client_id !== session.profile.id) {
-    return { ok: false, error: "Access denied. You cannot sign another client's agreement." };
-  }
+    if (agreement.status === "signed") {
+      return { ok: false, error: "This agreement is already signed and locked." };
+    }
 
-  if (agreement.status === "signed") {
-    return { ok: false, error: "This agreement is already signed and locked." };
-  }
+    const signedTimestamp = new Date().toISOString();
+    const signatureFileName = `sig_${agreement.id}_v${agreement.version}_${Date.now()}.png`;
 
-  const signedTimestamp = new Date().toISOString();
-  const signatureFileName = `sig_${agreement.id}_v${agreement.version}_${Date.now()}.png`;
+    // Save signature file to local storage directory
+    const storageDir = path.resolve(process.cwd(), "storage", "agreements");
+    if (!fs.existsSync(storageDir)) {
+      fs.mkdirSync(storageDir, { recursive: true });
+    }
 
-  // Update agreement record
-  const { error: updateError } = await adminClient
-    .from("agreements")
-    .update({
-      status: "signed",
-      signed_at: signedTimestamp,
-      signed_by_name: payload.signerName.trim(),
-      signature_path: signatureFileName,
-      signed_pdf_path: `agreements/${agreement.id}/agreement-v${agreement.version}-signed.pdf`,
-      signer_meta: {
-        timestamp: signedTimestamp,
-        signer_declared_name: payload.signerName.trim(),
-        user_id: session.profile.id,
-        user_email: session.user.email,
-        ip_recorded: "127.0.0.1 (local)",
-        consent: true,
+    const base64Data = payload.signatureDataUrl.replace(/^data:image\/\w+;base64,/, "");
+    const sigBuffer = Buffer.from(base64Data, "base64");
+    const sigDiskPath = path.join(storageDir, signatureFileName);
+    fs.writeFileSync(sigDiskPath, sigBuffer);
+
+    // Record in files table
+    await sql`
+      INSERT INTO public.files (
+        bucket, owner_id, wedding_id, original_name, mime_type, size_bytes, sha256, is_public, storage_path
+      ) VALUES (
+        'agreements', ${session.profile.id}, ${agreement.wedding_id}, ${signatureFileName},
+        'image/png', ${sigBuffer.length}, 'sha256-signature', false,
+        ${path.join("storage", "agreements", signatureFileName)}
+      )
+    `;
+
+    await sql`
+      UPDATE public.agreements
+      SET
+        status = 'signed',
+        signed_at = ${signedTimestamp},
+        signed_by_name = ${payload.signerName.trim()},
+        signature_path = ${signatureFileName},
+        signed_pdf_path = ${`agreements/${agreement.id}/agreement-v${agreement.version}-signed.pdf`},
+        signer_meta = ${sql.json({
+          timestamp: signedTimestamp,
+          signer_declared_name: payload.signerName.trim(),
+          user_id: session.profile.id,
+          user_email: session.user.email,
+          ip_recorded: "127.0.0.1 (local)",
+          consent: true,
+        })},
+        updated_at = NOW()
+      WHERE id = ${agreement.id}
+    `;
+
+    await sql`
+      INSERT INTO public.notifications (user_id, title, body, type, data)
+      VALUES (
+        ${agreement.client_id},
+        'Service Agreement Successfully Signed',
+        ${`Service agreement v${agreement.version} executed by ${payload.signerName.trim()}. Vendor shortlist and floor plans are now unlocked.`},
+        'agreement_signed',
+        ${sql.json({ agreement_id: agreement.id })}
+      )
+    `;
+
+    await sql`
+      INSERT INTO public.audit_events (actor_id, action, entity_type, entity_id, new_data)
+      VALUES (
+        ${session.profile.id},
+        'SIGN_AGREEMENT',
+        'agreements',
+        ${agreement.id},
+        ${sql.json({
+          signed_by_name: payload.signerName.trim(),
+          signed_at: signedTimestamp,
+        })}
+      )
+    `;
+
+    revalidatePath("/client");
+    revalidatePath("/client/agreement");
+
+    return {
+      ok: true,
+      data: {
+        agreementId: agreement.id,
+        signedAt: signedTimestamp,
       },
-    })
-    .eq("id", agreement.id);
-
-  if (updateError) {
-    return { ok: false, error: updateError.message };
-  }
-
-  // Write notifications
-  await adminClient.from("notifications").insert({
-    user_id: agreement.client_id,
-    title: "Service Agreement Successfully Signed",
-    body: `Service agreement v${agreement.version} executed by ${payload.signerName.trim()}. Vendor shortlist and floor plans are now unlocked.`,
-    type: "agreement_signed",
-    data: { agreement_id: agreement.id },
+    };
   });
-
-  // Log audit event
-  await adminClient.from("audit_events").insert({
-    actor_id: session.profile.id,
-    action: "SIGN_AGREEMENT",
-    entity_type: "agreements",
-    entity_id: agreement.id,
-    new_data: {
-      signed_by_name: payload.signerName.trim(),
-      signed_at: signedTimestamp,
-    },
-  });
-
-  revalidatePath("/client");
-  revalidatePath("/client/agreement");
-
-  return {
-    ok: true,
-    data: {
-      agreementId: agreement.id,
-      signedAt: signedTimestamp,
-    },
-  };
 }

@@ -38,5 +38,11 @@ next-env.d.ts
 # supabase local db artifacts
 .supabase/
 
+# local database cluster and files
+.local-db/
+uploads/
+certs/
+*.log
+
 # raw user uploads in root
 /*.jpeg

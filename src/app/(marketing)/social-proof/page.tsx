@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withAnon } from "@/lib/db/with-user";
 import { DEMO_SOCIAL_PROOF } from "@/lib/constants/demo-data";
 import { fetchWithCache } from "@/lib/cache";
 import type { SocialProof } from "@/types/database";
@@ -16,12 +16,13 @@ export const revalidate = 60;
 async function getSocialProof(): Promise<SocialProof[]> {
   return fetchWithCache("social_proof_page_data_cache", 300000, async () => {
     try {
-      const admin = createAdminClient();
-      const { data } = await admin
-        .from("social_proof")
-        .select("*")
-        .order("display_order", { ascending: true });
-      if (data && data.length > 0) return data as SocialProof[];
+      const data = await withAnon(async (sql) => {
+        return sql`
+          SELECT * FROM public.social_proof
+          ORDER BY display_order ASC
+        `;
+      });
+      if (data && data.length > 0) return data as unknown as SocialProof[];
     } catch {
       // Fall back to seed citations
     }

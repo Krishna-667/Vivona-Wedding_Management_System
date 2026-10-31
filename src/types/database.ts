@@ -44,6 +44,7 @@ export type VendorBillStatus = "received" | "verified" | "paid" | "disputed";
 
 export interface Profile {
   id: string;
+  email?: string | null;
   role: UserRole;
   full_name: string;
   phone: string | null;

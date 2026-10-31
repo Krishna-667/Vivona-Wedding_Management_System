@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -9,11 +10,17 @@ export const metadata = {
 };
 
 export default async function AdminContentPage() {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  // Count items
-  const { count: packageCount } = await admin.from("packages").select("*", { count: "exact", head: true });
-  const { count: socialProofCount } = await admin.from("social_proof").select("*", { count: "exact", head: true });
+  const { packageCount, socialProofCount } = await withUser(userId, async (sql) => {
+    const [pkg] = await sql`SELECT count(*) FROM public.packages`;
+    const [sp] = await sql`SELECT count(*) FROM public.social_proof`;
+    return {
+      packageCount: Number(pkg.count),
+      socialProofCount: Number(sp.count),
+    };
+  });
 
   return (
     <div className="space-y-8 max-w-5xl">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth/session";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { AgreementSignaturePad } from "@/components/features/client/agreement-signature-pad";
 import { GoldKnotIcon } from "@/components/ui/logo";
 import { BRAND } from "@/lib/brand";
@@ -37,18 +37,15 @@ export default async function ClientAgreementPage() {
   let agreement: any = null;
 
   if (session) {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from("agreements")
-      .select("*")
-      .eq("client_id", session.profile.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (data) {
-      agreement = data;
-    }
+    agreement = await withUser(session.profile.id, async (sql) => {
+      const [row] = await sql`
+        SELECT * FROM public.agreements
+        WHERE client_id = ${session.profile.id}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      return row || null;
+    });
   }
 
   // Fallback demo agreement if not yet created in CRM

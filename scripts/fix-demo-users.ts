@@ -1,21 +1,15 @@
-import { createClient } from "@supabase/supabase-js";
+import postgres from "postgres";
+import { hash } from "@node-rs/argon2";
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const DATABASE_URL =
+  process.env.DATABASE_SERVICE_URL ||
+  "postgres://vivona_service:ChangeMe_Service#2026@127.0.0.1:5432/vivona";
+
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "ChangeMe-Demo#2026";
-
-if (!SERVICE_ROLE_KEY) {
-  console.error("Missing SUPABASE_SERVICE_ROLE_KEY");
-  process.exit(1);
-}
-
-const adminSupabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 
 const DEMO_ACCOUNTS = [
   { email: "admin@vivona.demo", role: "admin", name: "Devraj Rathore" },
@@ -30,72 +24,46 @@ const DEMO_ACCOUNTS = [
 async function main() {
   console.log("🔑 Synchronizing and resetting demo credentials to:", DEMO_PASSWORD);
 
-  const { data: userListData, error: listErr } = await adminSupabase.auth.admin.listUsers();
-  if (listErr) {
-    console.error("Failed to list users:", listErr);
-    process.exit(1);
-  }
-
-  const existingUsers = userListData?.users || [];
+  const sql = postgres(DATABASE_URL);
+  const passwordHash = await hash(DEMO_PASSWORD, {
+    memoryCost: 19456,
+    timeCost: 2,
+    parallelism: 1,
+  });
 
   for (const acc of DEMO_ACCOUNTS) {
-    const existing = existingUsers.find((u) => u.email === acc.email);
+    const [profile] = await sql`
+      SELECT id FROM public.profiles WHERE email = ${acc.email}
+    `;
 
-    if (existing) {
-      console.log(`Resetting password for existing user: ${acc.email} (${existing.id})`);
-      const { error: updateErr } = await adminSupabase.auth.admin.updateUserById(existing.id, {
-        password: DEMO_PASSWORD,
-        email_confirm: true,
-        user_metadata: {
-          full_name: acc.name,
-          role: acc.role,
-        },
-      });
-
-      if (updateErr) {
-        console.error(`Failed to update password for ${acc.email}:`, updateErr.message);
-      } else {
-        console.log(`✓ Password updated for ${acc.email}`);
-      }
+    if (profile) {
+      await sql`
+        INSERT INTO private.auth_credentials (profile_id, password_hash)
+        VALUES (${profile.id}, ${passwordHash})
+        ON CONFLICT (profile_id) DO UPDATE SET password_hash = ${passwordHash}, updated_at = NOW()
+      `;
+      console.log(`✓ Password updated for ${acc.email} (${profile.id})`);
     } else {
-      console.log(`Creating new user: ${acc.email}`);
-      const { data: created, error: createErr } = await adminSupabase.auth.admin.createUser({
-        email: acc.email,
-        password: DEMO_PASSWORD,
-        email_confirm: true,
-        user_metadata: {
-          full_name: acc.name,
-          role: acc.role,
-        },
-      });
-
-      if (createErr) {
-        console.error(`Failed to create ${acc.email}:`, createErr.message);
-      } else {
-        console.log(`✓ Created ${acc.email}`);
-      }
+      console.log(`Creating profile & credentials for ${acc.email}`);
+      const [newProf] = await sql`
+        INSERT INTO public.profiles (email, role, full_name, is_active)
+        VALUES (${acc.email}, ${acc.role}, ${acc.name}, true)
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO private.auth_credentials (profile_id, password_hash)
+        VALUES (${newProf.id}, ${passwordHash})
+        ON CONFLICT (profile_id) DO UPDATE SET password_hash = ${passwordHash}, updated_at = NOW()
+      `;
+      console.log(`✓ Created user & credentials for ${acc.email}`);
     }
   }
 
-  // Verify login directly using public anon client for each demo account
-  console.log("\n🧪 Testing client authentication for all demo accounts:");
-  const anonClient = createClient(SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "");
-
-  for (const acc of DEMO_ACCOUNTS) {
-    const { data: authData, error: authErr } = await anonClient.auth.signInWithPassword({
-      email: acc.email,
-      password: DEMO_PASSWORD,
-    });
-
-    if (authErr || !authData.user) {
-      console.error(`❌ Authentication FAILED for ${acc.email}:`, authErr?.message);
-    } else {
-      console.log(`✅ Authentication SUCCEEDED for ${acc.email} (UID: ${authData.user.id})`);
-    }
-  }
+  await sql.end();
+  console.log("✅ All demo credentials synchronized successfully.");
 }
 
-main().then(() => process.exit(0)).catch((err) => {
-  console.error(err);
+main().catch((err) => {
+  console.error("Failed to fix demo users:", err);
   process.exit(1);
 });

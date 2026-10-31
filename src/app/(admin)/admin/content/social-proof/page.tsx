@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { SocialProofManager } from "@/components/features/admin/social-proof-manager";
 import type { SocialProof } from "@/types/database";
 
@@ -10,13 +11,17 @@ export const metadata = {
 };
 
 export default async function AdminSocialProofCMSPage() {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from("social_proof")
-    .select("*")
-    .order("display_order", { ascending: true });
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  const items = (data || []) as SocialProof[];
+  const data = await withUser(userId, async (sql) => {
+    return sql`
+      SELECT * FROM public.social_proof
+      ORDER BY display_order ASC
+    `;
+  });
+
+  const items = (data || []) as unknown as SocialProof[];
 
   return (
     <div className="space-y-8 max-w-4xl">

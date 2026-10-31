@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { withUser } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
 import type { VendorCategory } from "@/types/database";
 
@@ -49,28 +49,21 @@ export async function createRfqAction(
     return { ok: false, error: "Per agency standards, an RFQ must compare at least 2 vendors." };
   }
 
-  const admin = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    const [rfq] = await sql`
+      INSERT INTO public.rfqs (
+        wedding_id, category, deadline, requirements, status
+      ) VALUES (
+        ${weddingId}, ${category}, ${deadline || null},
+        ${sql.json(requirements || {})}, 'open'
+      )
+      RETURNING id
+    `;
 
-  // 1. Create RFQ
-  const { data: rfq, error: rfqErr } = await admin
-    .from("rfqs")
-    .insert({
-      wedding_id: weddingId,
-      category,
-      deadline: deadline || null,
-      requirements: requirements || {},
-      status: "open",
-    })
-    .select("id")
-    .single();
-
-  if (rfqErr || !rfq) {
-    return { ok: false, error: rfqErr?.message || "Failed to create RFQ." };
-  }
-
-  revalidatePath(`/admin/vendors`);
-  revalidatePath(`/admin/weddings/${weddingId}`);
-  return { ok: true, data: { rfqId: rfq.id } };
+    revalidatePath(`/admin/vendors`);
+    revalidatePath(`/admin/weddings/${weddingId}`);
+    return { ok: true, data: { rfqId: rfq.id } };
+  });
 }
 
 /**
@@ -84,9 +77,6 @@ export async function submitVendorQuoteAction(
     return { ok: false, error: "Unauthorized. Admin role required." };
   }
 
-  const admin = createAdminClient();
-
-  // Compute totals
   let subtotalPaise = 0;
   let taxPaise = 0;
 
@@ -99,45 +89,36 @@ export async function submitVendorQuoteAction(
 
   const totalPaise = subtotalPaise + taxPaise;
 
-  // 1. Insert Quote
-  const { data: quote, error: quoteErr } = await admin
-    .from("vendor_quotes")
-    .insert({
-      rfq_id: input.rfqId,
-      vendor_id: input.vendorId,
-      subtotal_paise: subtotalPaise,
-      tax_paise: taxPaise,
-      total_paise: totalPaise,
-      extra_hour_rate_paise: input.extraHourRatePaise,
-      valid_until: input.validUntil || null,
-      notes: input.notes || null,
-      status: "submitted",
-    })
-    .select("id")
-    .single();
+  return withUser(session.profile.id, async (sql) => {
+    const [quote] = await sql`
+      INSERT INTO public.vendor_quotes (
+        rfq_id, vendor_id, subtotal_paise, tax_paise, total_paise,
+        extra_hour_rate_paise, valid_until, notes, status
+      ) VALUES (
+        ${input.rfqId}, ${input.vendorId}, ${subtotalPaise}, ${taxPaise}, ${totalPaise},
+        ${input.extraHourRatePaise}, ${input.validUntil || null}, ${input.notes || null}, 'submitted'
+      )
+      RETURNING id
+    `;
 
-  if (quoteErr || !quote) {
-    return { ok: false, error: quoteErr?.message || "Failed to record quote." };
-  }
+    for (let i = 0; i < input.lines.length; i++) {
+      const l = input.lines[i];
+      const lineTotal = Math.round(l.qty * l.unitPricePaise);
+      const lineTax = Math.round((lineTotal * (l.taxPct || 0)) / 100);
 
-  // 2. Insert Quote Lines
-  const lineRecords = input.lines.map((l, index) => ({
-    quote_id: quote.id,
-    label: l.label,
-    qty: l.qty,
-    unit: l.unit,
-    unit_price_paise: l.unitPricePaise,
-    tax_pct: l.taxPct,
-    total_paise: Math.round(l.qty * l.unitPricePaise) + Math.round((l.qty * l.unitPricePaise * (l.taxPct || 0)) / 100),
-    included: l.included ?? true,
-    is_extra: l.isExtra ?? false,
-    display_order: index + 1,
-  }));
+      await sql`
+        INSERT INTO public.quote_lines (
+          quote_id, label, qty, unit, unit_price_paise, tax_pct, total_paise, included, is_extra, display_order
+        ) VALUES (
+          ${quote.id}, ${l.label}, ${l.qty}, ${l.unit}, ${l.unitPricePaise},
+          ${l.taxPct}, ${lineTotal + lineTax}, ${l.included ?? true}, ${l.isExtra ?? false}, ${i + 1}
+        )
+      `;
+    }
 
-  await admin.from("quote_lines").insert(lineRecords);
-
-  revalidatePath(`/admin/vendors/compare/${input.rfqId}`);
-  return { ok: true, data: { quoteId: quote.id, totalPaise } };
+    revalidatePath(`/admin/vendors/compare/${input.rfqId}`);
+    return { ok: true, data: { quoteId: quote.id, totalPaise } };
+  });
 }
 
 /**
@@ -151,31 +132,26 @@ export async function selectQuoteAction(
     return { ok: false, error: "Unauthorized. Admin role required." };
   }
 
-  const admin = createAdminClient();
+  return withUser(session.profile.id, async (sql) => {
+    const [row] = await sql`
+      SELECT public.select_quote(${quoteId}) as res
+    `;
 
-  const { data, error } = await admin.rpc("select_quote", {
-    p_quote_id: quoteId,
+    const result = row?.res as {
+      ok: boolean;
+      wedding_vendor_id: string;
+      agreed_amount_paise: number;
+      rfq_id: string;
+    };
+
+    revalidatePath("/admin/vendors");
+    revalidatePath(`/admin/vendors/compare/${result.rfq_id}`);
+    return {
+      ok: true,
+      data: {
+        weddingVendorId: result.wedding_vendor_id,
+        agreedAmountPaise: result.agreed_amount_paise,
+      },
+    };
   });
-
-  if (error) {
-    console.error("[select_quote RPC error]", error);
-    return { ok: false, error: error.message };
-  }
-
-  const result = data as {
-    ok: boolean;
-    wedding_vendor_id: string;
-    agreed_amount_paise: number;
-    rfq_id: string;
-  };
-
-  revalidatePath("/admin/vendors");
-  revalidatePath(`/admin/vendors/compare/${result.rfq_id}`);
-  return {
-    ok: true,
-    data: {
-      weddingVendorId: result.wedding_vendor_id,
-      agreedAmountPaise: result.agreed_amount_paise,
-    },
-  };
 }

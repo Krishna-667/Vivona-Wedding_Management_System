@@ -1,4 +1,5 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import { formatPaise } from "@/lib/utils";
 import { InviteEmployeeDialog } from "@/components/features/admin/invite-employee-dialog";
 
@@ -9,15 +10,20 @@ export const metadata = {
 };
 
 export default async function AdminTeamPage() {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
 
-  const [teamRes, assignmentsRes] = await Promise.all([
-    admin.from("profiles").select("*").in("role", ["admin", "employee"]).order("created_at", { ascending: true }),
-    admin.from("wedding_assignments").select("employee_id, wedding_id"),
-  ]);
-
-  const team = teamRes.data || [];
-  const assignments = assignmentsRes.data || [];
+  const { team, assignments } = await withUser(userId, async (sql) => {
+    const team = await sql`
+      SELECT * FROM public.profiles
+      WHERE role IN ('admin', 'employee')
+      ORDER BY created_at ASC
+    `;
+    const assignments = await sql`
+      SELECT employee_id, wedding_id FROM public.wedding_assignments
+    `;
+    return { team: team as any[], assignments: assignments as any[] };
+  });
 
   // Workload mapping
   const workloadMap = new Map<string, number>();

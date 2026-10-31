@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/session";
+import { withUser } from "@/lib/db/with-user";
 import type { Vendor, VendorCategory } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -24,21 +25,34 @@ export default async function AdminVendorsPage({
 }: {
   searchParams: { category?: string };
 }) {
-  const admin = createAdminClient();
+  const session = await getSessionProfile();
+  const userId = session?.profile.id || "00000000-0000-0000-0000-000000000000";
   const activeCat = searchParams.category || "all";
 
-  let query = admin.from("vendors").select("*").order("name", { ascending: true });
-  if (activeCat !== "all") {
-    query = query.eq("category", activeCat);
-  }
+  const { vendors, recentRfqs } = await withUser(userId, async (sql) => {
+    const vendors = await sql`
+      SELECT * FROM public.vendors
+      ${activeCat !== "all" ? sql`WHERE category = ${activeCat}` : sql``}
+      ORDER BY name ASC
+    `;
 
-  const [vendorsRes, rfqsRes] = await Promise.all([
-    query,
-    admin.from("rfqs").select("id, category, status, weddings(code, title)").order("created_at", { ascending: false }).limit(5),
-  ]);
+    const rfqs = await sql`
+      SELECT 
+        r.id, 
+        r.category, 
+        r.status, 
+        row_to_json(w.*) as weddings
+      FROM public.rfqs r
+      LEFT JOIN public.weddings w ON w.id = r.wedding_id
+      ORDER BY r.created_at DESC
+      LIMIT 5
+    `;
 
-  const vendors = (vendorsRes.data || []) as Vendor[];
-  const recentRfqs = rfqsRes.data || [];
+    return { vendors, recentRfqs: rfqs };
+  });
+
+  const vendorList = (vendors || []) as unknown as Vendor[];
+  const rfqList = (recentRfqs || []) as any[];
 
   return (
     <div className="space-y-8 max-w-6xl">

@@ -2,9 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getSessionProfile, getRoleDashboardPath } from "@/lib/auth/session";
+import { withAuth, withService } from "@/lib/db/with-user";
+import { hashPassword, verifyPassword } from "@/lib/auth/password";
+import { isAccountLocked, recordLoginAttempt } from "@/lib/auth/lockout";
+import {
+  createSession,
+  destroySession,
+  getSessionProfile,
+  getRoleDashboardPath,
+} from "@/lib/auth/session";
 import type { UserRole } from "@/types/database";
 
 const SignInSchema = z.object({
@@ -30,7 +36,9 @@ export type ActionResponse<T = unknown> =
   | { ok: true; data: T }
   | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
-export async function signInAction(formData: FormData): Promise<ActionResponse<{ role: UserRole; redirectTo: string }>> {
+export async function signInAction(
+  formData: FormData
+): Promise<ActionResponse<{ role: UserRole; redirectTo: string }>> {
   const raw = {
     email: formData.get("email"),
     password: formData.get("password"),
@@ -45,32 +53,48 @@ export async function signInAction(formData: FormData): Promise<ActionResponse<{
     };
   }
 
-  const supabase = createClient();
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: parsed.data.email,
-    password: parsed.data.password,
-  });
+  const { email, password } = parsed.data;
 
-  if (error || !data.user) {
+  // 1. Check account lockout (5 failures in 15 min)
+  if (await isAccountLocked(email)) {
     return {
       ok: false,
-      error: error?.message || "Invalid email or password.",
+      error: "Account temporarily locked due to multiple failed login attempts. Please try again in 15 minutes.",
     };
   }
 
-  // Get user profile to determine role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, is_active")
-    .eq("id", data.user.id)
-    .single();
+  // 2. Query profile and credential
+  const userRecord = await withAuth(async (sql) => {
+    const [row] = await sql`
+      SELECT
+        p.id,
+        p.email,
+        p.role,
+        p.full_name,
+        p.is_active,
+        c.password_hash
+      FROM public.profiles p
+      LEFT JOIN private.auth_credentials c ON c.profile_id = p.id
+      WHERE p.email = ${email}
+    `;
+    return row;
+  });
 
-  let role = (profile?.role as UserRole) || "client";
-  if (data.user.email === "admin@vivona.demo") {
-    role = "admin";
-  } else if (data.user.email?.startsWith("planner") || data.user.email?.includes("planner")) {
-    role = "employee";
+  // 3. Verify argon2id password
+  const isValid = await verifyPassword(password, userRecord?.password_hash);
+  await recordLoginAttempt(email, isValid);
+
+  if (!isValid || !userRecord || !userRecord.is_active) {
+    return {
+      ok: false,
+      error: "Invalid email or password.",
+    };
   }
+
+  // 4. Create custom database session and set HTTP-only cookie
+  await createSession(userRecord.id);
+
+  const role = userRecord.role as UserRole;
   const redirectTo = getRoleDashboardPath(role);
 
   return {
@@ -79,7 +103,9 @@ export async function signInAction(formData: FormData): Promise<ActionResponse<{
   };
 }
 
-export async function signUpAction(formData: FormData): Promise<ActionResponse<{ message: string }>> {
+export async function signUpAction(
+  formData: FormData
+): Promise<ActionResponse<{ message: string }>> {
   const raw = {
     fullName: formData.get("fullName"),
     email: formData.get("email"),
@@ -96,41 +122,49 @@ export async function signUpAction(formData: FormData): Promise<ActionResponse<{
     };
   }
 
-  const supabase = createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-    options: {
-      data: {
-        full_name: parsed.data.fullName,
-        phone: parsed.data.phone,
-      },
-    },
-  });
+  const { fullName, email, password, phone } = parsed.data;
 
-  if (error) {
+  try {
+    const hashedPassword = await hashPassword(password);
+
+    await withService(async (sql) => {
+      // 1. Create profile (client role only)
+      const [profile] = await sql`
+        INSERT INTO public.profiles (full_name, email, role, phone, is_active)
+        VALUES (${fullName}, ${email}, 'client', ${phone || null}, true)
+        RETURNING id
+      `;
+
+      // 2. Store argon2id password in private.auth_credentials
+      await sql`
+        INSERT INTO private.auth_credentials (profile_id, password_hash)
+        VALUES (${profile.id}, ${hashedPassword})
+      `;
+    });
+
     return {
-      ok: false,
-      error: error.message,
+      ok: true,
+      data: {
+        message: "Registration successful. You can now log into your client portal.",
+      },
     };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Registration failed.";
+    if (message.includes("profiles_email_key") || message.includes("duplicate key")) {
+      return { ok: false, error: "An account with this email address already exists." };
+    }
+    return { ok: false, error: "Registration failed. Please try again." };
   }
-
-  return {
-    ok: true,
-    data: {
-      message: "Registration successful. You can now log into your client portal.",
-    },
-  };
 }
 
 export async function signOutAction(): Promise<void> {
-  const supabase = createClient();
-  await supabase.auth.signOut();
+  await destroySession();
   redirect("/login");
 }
 
-export async function inviteEmployeeAction(formData: FormData): Promise<ActionResponse<{ id: string }>> {
-  // Ensure the requesting user is an active Admin
+export async function inviteEmployeeAction(
+  formData: FormData
+): Promise<ActionResponse<{ id: string }>> {
   const session = await getSessionProfile();
   if (!session || session.profile.role !== "admin") {
     return { ok: false, error: "Unauthorized: Only administrators can invite employees." };
@@ -152,46 +186,49 @@ export async function inviteEmployeeAction(formData: FormData): Promise<ActionRe
     };
   }
 
-  const adminClient = createAdminClient();
-
-  // Create auth user or invite
+  const { email, fullName, phone, hourlyRatePaise } = parsed.data;
   const tempPassword = process.env.DEMO_PASSWORD || "ChangeMe-Demo#2026";
-  const { data: userData, error: createError } = await adminClient.auth.admin.createUser({
-    email: parsed.data.email,
-    password: tempPassword,
-    email_confirm: true,
-    user_metadata: {
-      full_name: parsed.data.fullName,
-      phone: parsed.data.phone,
-    },
+  const hashedPassword = await hashPassword(tempPassword);
+
+  const employeeId = await withService(async (sql) => {
+    // 1. Insert or update employee profile
+    const [emp] = await sql`
+      INSERT INTO public.profiles (
+        email, full_name, role, phone, hourly_rate_paise, is_active
+      ) VALUES (
+        ${email}, ${fullName}, 'employee', ${phone || null}, ${hourlyRatePaise}, true
+      )
+      ON CONFLICT (email) DO UPDATE SET
+        full_name = EXCLUDED.full_name,
+        role = 'employee',
+        phone = EXCLUDED.phone,
+        hourly_rate_paise = EXCLUDED.hourly_rate_paise,
+        is_active = true
+      RETURNING id
+    `;
+
+    // 2. Set credentials
+    await sql`
+      INSERT INTO private.auth_credentials (profile_id, password_hash)
+      VALUES (${emp.id}, ${hashedPassword})
+      ON CONFLICT (profile_id) DO UPDATE SET
+        password_hash = EXCLUDED.password_hash
+    `;
+
+    // 3. Record audit event
+    await sql`
+      INSERT INTO public.audit_events (actor_id, action, entity_type, entity_id, new_data)
+      VALUES (
+        ${session.profile.id},
+        'INVITE_EMPLOYEE',
+        'profiles',
+        ${emp.id},
+        ${sql.json({ email, role: "employee" })}
+      )
+    `;
+
+    return emp.id;
   });
 
-  if (createError || !userData.user) {
-    return { ok: false, error: createError?.message || "Failed to create employee account." };
-  }
-
-  // Update profile with employee role and rate
-  const { error: profileError } = await adminClient.from("profiles").upsert({
-    id: userData.user.id,
-    role: "employee",
-    full_name: parsed.data.fullName,
-    phone: parsed.data.phone,
-    hourly_rate_paise: parsed.data.hourlyRatePaise,
-    is_active: true,
-  });
-
-  if (profileError) {
-    return { ok: false, error: profileError.message };
-  }
-
-  // Log audit event
-  await adminClient.from("audit_events").insert({
-    actor_id: session.profile.id,
-    action: "INVITE_EMPLOYEE",
-    entity_type: "profiles",
-    entity_id: userData.user.id,
-    new_data: { email: parsed.data.email, role: "employee" },
-  });
-
-  return { ok: true, data: { id: userData.user.id } };
+  return { ok: true, data: { id: employeeId } };
 }
