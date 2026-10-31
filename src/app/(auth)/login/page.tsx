@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   getAuthChallengeAction,
@@ -11,11 +12,19 @@ import {
 import { sealCredentialsInBrowser } from "@/lib/auth/client-seal";
 
 function LoginForm() {
+  const searchParams = useSearchParams();
+  const urlError = searchParams.get("error");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(urlError);
+
+  React.useEffect(() => {
+    if (urlError) {
+      setErrorMsg(urlError);
+    }
+  }, [urlError]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -56,22 +65,10 @@ function LoginForm() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = () => {
     setGoogleLoading(true);
     setErrorMsg(null);
-    try {
-      const res = await signInWithGoogleAction();
-      if (!res.ok) {
-        toast.error(res.error || "Google Sign-In failed.");
-        setGoogleLoading(false);
-        return;
-      }
-      toast.success("Signed in with Google! Redirecting...");
-      window.location.href = res.data.redirectTo;
-    } catch {
-      toast.error("Failed to authenticate with Google.");
-      setGoogleLoading(false);
-    }
+    window.location.href = "/api/auth/google";
   };
 
   return (

@@ -122,48 +122,13 @@ export async function signInSealedAction(
 
 /**
  * Google Sign-In Action
- * If GOOGLE_CLIENT_ID is configured, initiates OAuth flow.
- * Otherwise, provisions a verified Google client session locally.
+ * Directs browser to /api/auth/google which initiates Google OAuth 2.0 flow
+ * or provisions client session locally.
  */
 export async function signInWithGoogleAction(): Promise<
   ActionResponse<{ role: UserRole; redirectTo: string }>
 > {
-  try {
-    const googleClientId = process.env.GOOGLE_CLIENT_ID;
-    if (googleClientId) {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-      const redirectUri = `${siteUrl}/api/auth/google/callback`;
-      const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleClientId}&redirect_uri=${encodeURIComponent(
-        redirectUri
-      )}&response_type=code&scope=openid%20email%20profile&access_type=offline`;
-      return { ok: true, data: { role: "client", redirectTo: googleAuthUrl } };
-    }
-
-    // Seamless local fallback for Google Sign-In
-    const googleEmail = "google.couple@vivona.demo";
-    const googleName = "Priyamvada & Rohan (Google Auth)";
-
-    const userRecord = await withService(async (sql) => {
-      let [existing] = await sql`
-        SELECT id, email, role FROM public.profiles WHERE email = ${googleEmail}
-      `;
-      if (!existing) {
-        [existing] = await sql`
-          INSERT INTO public.profiles (email, full_name, role, is_active)
-          VALUES (${googleEmail}, ${googleName}, 'client', true)
-          RETURNING id, email, role
-        `;
-      }
-      return existing;
-    });
-
-    await createSession(userRecord.id);
-    const role = userRecord.role as UserRole;
-    return { ok: true, data: { role, redirectTo: getRoleDashboardPath(role) } };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to authenticate with Google.";
-    return { ok: false, error: message };
-  }
+  return { ok: true, data: { role: "client", redirectTo: "/api/auth/google" } };
 }
 
 export async function signInAction(

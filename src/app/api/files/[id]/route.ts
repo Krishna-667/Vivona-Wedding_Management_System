@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getSessionProfile } from "@/lib/auth/session";
 import { withUser, withAnon } from "@/lib/db/with-user";
+import { decryptFile } from "@/lib/storage/encryption";
 
 export async function GET(
   request: NextRequest,
@@ -40,8 +41,9 @@ export async function GET(
     return new NextResponse("File not found on storage", { status: 404 });
   }
 
-  // 3. Stream file contents
-  const fileBuffer = fs.readFileSync(fullPath);
+  // 3. Stream file contents (transparently decrypts if encrypted with VIV1 at rest)
+  const rawDiskBuffer = fs.readFileSync(fullPath);
+  const fileBuffer = decryptFile(rawDiskBuffer);
 
   const headers = new Headers();
   headers.set("Content-Type", fileMeta.mime_type || "application/octet-stream");
@@ -52,7 +54,7 @@ export async function GET(
     `inline; filename="${encodeURIComponent(fileMeta.original_name)}"`
   );
 
-  return new NextResponse(fileBuffer, {
+  return new NextResponse(new Uint8Array(fileBuffer), {
     status: 200,
     headers,
   });

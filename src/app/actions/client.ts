@@ -2,6 +2,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { encryptFile } from "@/lib/storage/encryption";
 import { revalidatePath } from "next/cache";
 import { withUser } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
@@ -126,8 +127,10 @@ export async function signAgreementAction(payload: {
 
     const base64Data = payload.signatureDataUrl.replace(/^data:image\/\w+;base64,/, "");
     const sigBuffer = Buffer.from(base64Data, "base64");
+    // Encrypt private agreement signature at rest using AES-256-GCM
+    const encryptedDiskBuffer = encryptFile(sigBuffer);
     const sigDiskPath = path.join(storageDir, signatureFileName);
-    fs.writeFileSync(sigDiskPath, sigBuffer);
+    fs.writeFileSync(sigDiskPath, encryptedDiskBuffer);
 
     // Record in files table
     await sql`
