@@ -17,15 +17,32 @@ export async function GET(
   }
 
   // Create dedicated subscriber client for PostgreSQL LISTEN/NOTIFY
-  const listenerUrl =
-    process.env.DATABASE_URL ||
-    "postgres://vivona_app:ChangeMe_App#2026@127.0.0.1:5432/vivona";
-
-  const subSql = postgres(listenerUrl, {
-    max: 1,
-    idle_timeout: 0,
-    connect_timeout: 10,
-  });
+  let subSql: postgres.Sql;
+  try {
+    const rawUrl = process.env.DATABASE_URL || "postgres://vivona_app:ChangeMe_App%232026@127.0.0.1:5432/vivona";
+    const u = new URL(rawUrl);
+    subSql = postgres({
+      host: u.hostname || "127.0.0.1",
+      port: Number(u.port) || 5432,
+      user: decodeURIComponent(u.username) || "vivona_app",
+      password: decodeURIComponent(u.password) || "ChangeMe_App#2026",
+      database: u.pathname.replace(/^\//, "") || "vivona",
+      max: 1,
+      idle_timeout: 0,
+      connect_timeout: 10,
+    });
+  } catch {
+    subSql = postgres({
+      host: "127.0.0.1",
+      port: 5432,
+      user: "vivona_app",
+      password: "ChangeMe_App#2026",
+      database: "vivona",
+      max: 1,
+      idle_timeout: 0,
+      connect_timeout: 10,
+    });
+  }
 
   const responseStream = new TransformStream();
   const writer = responseStream.writable.getWriter();

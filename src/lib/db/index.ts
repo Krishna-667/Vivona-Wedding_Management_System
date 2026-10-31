@@ -7,42 +7,54 @@ declare global {
   var _serviceSqlPool: postgres.Sql | undefined;
 }
 
-const defaultAppUrl =
-  process.env.DATABASE_URL ||
-  "postgres://vivona_app:ChangeMe_App%232026@127.0.0.1:5432/vivona";
+function createClient(
+  envUrl: string | undefined,
+  defaultUser: string,
+  defaultPass: string,
+  maxConns: number
+): postgres.Sql {
+  if (envUrl) {
+    try {
+      const u = new URL(envUrl);
+      return postgres({
+        host: u.hostname || "127.0.0.1",
+        port: Number(u.port) || 5432,
+        user: decodeURIComponent(u.username) || defaultUser,
+        password: decodeURIComponent(u.password) || defaultPass,
+        database: u.pathname.replace(/^\//, "") || "vivona",
+        max: maxConns,
+        idle_timeout: 20,
+        connect_timeout: 5,
+      });
+    } catch {
+      // Fallback below
+    }
+  }
 
-const defaultAuthUrl =
-  process.env.DATABASE_AUTH_URL ||
-  "postgres://vivona_auth:ChangeMe_Auth%232026@127.0.0.1:5432/vivona";
-
-const defaultServiceUrl =
-  process.env.DATABASE_SERVICE_URL ||
-  "postgres://vivona_service:ChangeMe_Service%232026@127.0.0.1:5432/vivona";
+  return postgres({
+    host: "127.0.0.1",
+    port: 5432,
+    user: defaultUser,
+    password: defaultPass,
+    database: "vivona",
+    max: maxConns,
+    idle_timeout: 20,
+    connect_timeout: 5,
+  });
+}
 
 // Singleton connection pools surviving Next.js HMR development reloads
 export const appSql =
   globalThis._appSqlPool ??
-  postgres(defaultAppUrl, {
-    max: 10,
-    idle_timeout: 20,
-    connect_timeout: 5,
-  });
+  createClient(process.env.DATABASE_URL, "vivona_app", "ChangeMe_App#2026", 10);
 
 export const authSql =
   globalThis._authSqlPool ??
-  postgres(defaultAuthUrl, {
-    max: 5,
-    idle_timeout: 20,
-    connect_timeout: 5,
-  });
+  createClient(process.env.DATABASE_AUTH_URL, "vivona_auth", "ChangeMe_Auth#2026", 5);
 
 export const serviceSql =
   globalThis._serviceSqlPool ??
-  postgres(defaultServiceUrl, {
-    max: 5,
-    idle_timeout: 20,
-    connect_timeout: 5,
-  });
+  createClient(process.env.DATABASE_SERVICE_URL, "vivona_service", "ChangeMe_Service#2026", 5);
 
 if (process.env.NODE_ENV !== "production") {
   globalThis._appSqlPool = appSql;
