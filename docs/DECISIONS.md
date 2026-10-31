@@ -11,3 +11,15 @@
 ## DEC-002: Single-Agency Architecture
 - **Context:** The problem represents one luxury wedding planning agency operating in Jaipur and Udaipur with ~25 weddings/season.
 - **Decision:** Strictly single-tenant. No multi-agency overhead. All resources associate with `wedding_id`.
+
+## DEC-003: Strict Brand Integrity (Zero Hackathon or Event Meta in UI)
+- **Context:** The application is a production-grade operational platform for Vivona.
+- **Decision:** No mentions of "hackathon", "24h build", "Odoo", or competition context anywhere in the user-facing application, metadata, or documentation. The platform presents exclusively as a premier luxury wedding planning agency in Rajasthan.
+
+## DEC-004: Touch-Friendly E-Signature and Storage Lifecycle
+- **Context:** Clients frequently review agreements and execute contracts from mobile devices (390px viewports).
+- **Decision:** Implemented HTML5 canvas touch signature pad via `signature_pad` with dual verification (typed legal name + explicit consent checkbox). Upon execution, the signature data is timestamped, attached with signer IP/user-agent metadata, and marked immutable.
+
+## DEC-005: Agreement Gate for Client Portal
+- **Context:** Luxury planning agency intellectual property (vendor shortlists, negotiated pricing, floor layouts) must not leak before contract execution.
+- **Decision:** Implemented the "Agreement Gate" at both UI and database levels. Vendor shortlists and floor plans remain locked and visually obscured with an instructive banner until `agreements.status === 'signed'`. Database RLS policies strictly forbid client reads to vendor quotes until the agreement condition evaluates to true.

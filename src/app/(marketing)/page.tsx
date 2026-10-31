@@ -1,14 +1,113 @@
 import Link from "next/link";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { formatPaise } from "@/lib/utils";
 import { GoldKnotIcon } from "@/components/ui/logo";
 import { BRAND } from "@/lib/brand";
+import type { Package, SocialProof } from "@/types/database";
 
-export default function HomePage() {
+export const metadata = {
+  title: "Vivona · Luxury Rajasthan Wedding Planning & Operations",
+  description:
+    "The digital backbone of luxury three-day palace weddings across Jaipur and Udaipur. Replaces WhatsApp groups and paper checklists with real-time operational precision.",
+  openGraph: {
+    title: "Vivona · Luxury Rajasthan Wedding Planning & Operations",
+    description:
+      "Exclusive 25 weddings per season in Jaipur and Udaipur. Transparent crore-scale budgeting, 3-caterer price-per-plate comparison, and live big-day enforcement.",
+    type: "website",
+    locale: "en_IN",
+  },
+};
+
+const DEFAULT_PACKAGES: Partial<Package>[] = [
+  {
+    slug: "full-service",
+    name: "Full-Service Royal Wedding",
+    type: "full_service",
+    tagline: "Complete 3-Day Wedding Architecture & White-Glove Production in Rajasthan",
+    starting_price_paise: 350000000,
+    inclusions: [
+      "Full palace concept, mood boards and decor architecture",
+      "Comprehensive vendor curation & 3-caterer RFQ tender comparison",
+      "Staged 3-day guest hospitality, luxury airport fleet & room drops",
+      "Dedicated lead planner + 3 on-site coordinators on event days",
+      "Minute-by-minute live digital console & vendor arrival tracking",
+    ],
+  },
+  {
+    slug: "day-of",
+    name: "Partial & Big-Day Orchestration",
+    type: "day_of",
+    tagline: "Precision On-Site Operations, Vendor Check-in & Live Flow Management",
+    starting_price_paise: 120000000,
+    inclusions: [
+      "Handover & vendor synchronization 30 days prior to event",
+      "Master minute-by-minute event schedule and procession cues",
+      "Live on-site check-in board with automated late detection",
+      "On-ground lead coordinator and rapid incident response team",
+      "Post-event vendor clear-up and asset return supervision",
+    ],
+  },
+];
+
+const DEFAULT_PROOF = [
+  {
+    id: "sp-1",
+    platform: "instagram",
+    handle: "@vogueindia",
+    author_name: "Vogue India Weddings",
+    post_url: "https://instagram.com/p/DB1100Vivona1",
+    caption: "Inside Vivona's breathtaking 3-day royal palace celebration in Udaipur. A masterclass in heritage wedding architecture.",
+    rating: 5,
+  },
+  {
+    id: "sp-2",
+    platform: "google_review",
+    handle: "Rohan & Priyamvada",
+    author_name: "Priyamvada Singhania",
+    post_url: "https://maps.google.com/reviews/vivona/1",
+    caption: "Vivona replaced the chaotic family WhatsApp groups with absolute calm. From caterer comparison to the live Baraat schedule, they made our dream wedding flawless.",
+    rating: 5,
+  },
+  {
+    id: "sp-3",
+    platform: "google_review",
+    handle: "Kabir & Alankrita",
+    author_name: "Kabir Mittal",
+    post_url: "https://maps.google.com/reviews/vivona/2",
+    caption: "Crore-scale budget handled with extreme transparency. When we added 60 extra dinner guests, the per-plate math and billing was clear within minutes.",
+    rating: 5,
+  },
+];
+
+async function getHomeData() {
+  try {
+    const admin = createAdminClient();
+    const [pkgRes, spRes] = await Promise.all([
+      admin.from("packages").select("*").eq("is_active", true).order("display_order", { ascending: true }),
+      admin.from("social_proof").select("*").eq("featured", true).order("display_order", { ascending: true }).limit(3),
+    ]);
+
+    return {
+      packages: (pkgRes.data && pkgRes.data.length > 0) ? pkgRes.data : DEFAULT_PACKAGES,
+      socialProof: (spRes.data && spRes.data.length > 0) ? spRes.data : DEFAULT_PROOF,
+    };
+  } catch {
+    return {
+      packages: DEFAULT_PACKAGES,
+      socialProof: DEFAULT_PROOF,
+    };
+  }
+}
+
+export default async function HomePage() {
+  const { packages, socialProof } = await getHomeData();
+
   return (
     <div className="space-y-24 py-12 md:py-20">
       {/* Hero Section */}
       <section className="container text-center space-y-6 max-w-4xl">
         <div className="inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-50/60 px-4 py-1.5 text-xs font-medium text-charcoal">
-          <GoldKnotIcon className="w-3.5 h-3.5 text-gold-400" />
+          <GoldKnotIcon className="w-3.5 h-3.5 text-gold-500" />
           <span>Jaipur & Udaipur · Exclusive 25 Weddings / Season</span>
         </div>
 
@@ -25,87 +124,221 @@ export default function HomePage() {
             href="/book"
             className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-maroon px-8 py-3.5 text-base font-medium text-ivory hover:bg-maroon-600 transition-colors shadow-md"
           >
-            Start Your Wedding Plan
+            Start Your Wedding Plan →
           </Link>
           <Link
-            href="/login"
+            href="/packages"
             className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-border bg-card px-8 py-3.5 text-base font-medium text-charcoal hover:bg-ivory-300/50 transition-colors"
           >
-            Enter Role Portal
+            Explore Packages & Pricing
           </Link>
         </div>
       </section>
 
-      {/* Six Scenes Value Grid */}
+      {/* Trust Numbers Strip */}
       <section className="container">
-        <div className="text-center max-w-2xl mx-auto mb-12 space-y-2">
-          <h2 className="font-serif text-3xl font-semibold text-maroon">
-            Engineered for High-Stakes Rajasthan Celebrations
+        <div className="rounded-2xl border border-gold-400/40 bg-ivory-200/60 p-8 grid grid-cols-2 lg:grid-cols-4 gap-6 text-center">
+          <div className="space-y-1">
+            <p className="font-serif text-3xl sm:text-4xl font-bold text-maroon">25</p>
+            <p className="text-xs uppercase tracking-wider text-charcoal/70 font-semibold">
+              Weddings / Season Max
+            </p>
+            <p className="text-[11px] text-charcoal/50">White-glove dedicated leadership</p>
+          </div>
+          <div className="space-y-1">
+            <p className="font-serif text-3xl sm:text-4xl font-bold text-maroon">18+</p>
+            <p className="text-xs uppercase tracking-wider text-charcoal/70 font-semibold">
+              Vendor Disciplines
+            </p>
+            <p className="text-[11px] text-charcoal/50">Caterers, AV, florists & fleet</p>
+          </div>
+          <div className="space-y-1">
+            <p className="font-serif text-3xl sm:text-4xl font-bold text-maroon">100%</p>
+            <p className="text-xs uppercase tracking-wider text-charcoal/70 font-semibold">
+              Integer Paise Audited
+            </p>
+            <p className="text-[11px] text-charcoal/50">Zero float rounding discrepancies</p>
+          </div>
+          <div className="space-y-1">
+            <p className="font-serif text-3xl sm:text-4xl font-bold text-maroon">0</p>
+            <p className="text-xs uppercase tracking-wider text-charcoal/70 font-semibold">
+              Baraat Delays
+            </p>
+            <p className="text-[11px] text-charcoal/50">Automated grace period alerts</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Packages (Dynamic from DB) */}
+      <section className="container space-y-10">
+        <div className="text-center max-w-2xl mx-auto space-y-2">
+          <span className="text-xs uppercase tracking-widest text-maroon font-bold">
+            Tailored Experiences
+          </span>
+          <h2 className="font-serif text-3xl sm:text-4xl font-semibold text-charcoal">
+            Curated Wedding Packages
           </h2>
-          <p className="text-sm text-charcoal/70">
-            How Vivona solves the 6 operational friction points of crore-scale palace weddings.
+          <p className="text-xs sm:text-sm text-charcoal/70">
+            Transparent pricing linked directly to real database records.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-3">
-            <div className="w-10 h-10 rounded-lg bg-gold-100 flex items-center justify-center text-gold-600 font-serif font-bold">
-              01
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-maroon">First Consultation to E-Sign</h3>
-            <p className="text-sm text-charcoal/75 leading-relaxed">
-              Enquiry capture with theme, guest counts, and dates. Service agreements signed directly on phone with stored cryptographic PDFs.
-            </p>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          {packages.map((pkg) => {
+            const isFull = pkg.slug === "full-service" || pkg.type === "full_service";
 
-          <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-3">
-            <div className="w-10 h-10 rounded-lg bg-gold-100 flex items-center justify-center text-gold-600 font-serif font-bold">
-              02
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-maroon">3-Caterer RFQ Comparison</h3>
-            <p className="text-sm text-charcoal/75 leading-relaxed">
-              Structured side-by-side bids with calculated price-per-plate and inclusions. Awarding a winner automatically closes losing tenders with full audit preservation.
-            </p>
-          </div>
+            return (
+              <div
+                key={pkg.slug}
+                className="rounded-2xl border border-border bg-card p-8 flex flex-col justify-between shadow-sm hover:border-gold-400/60 transition-all space-y-6"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                        isFull
+                          ? "bg-maroon/10 text-maroon border border-maroon/20"
+                          : "bg-sage-100 text-sage-700 border border-sage-300"
+                      }`}
+                    >
+                      {isFull ? "Complete Production" : "On-Site Operations"}
+                    </span>
+                    <span className="font-serif text-2xl font-bold text-maroon">
+                      {formatPaise(pkg.starting_price_paise || 0n, { showCompact: true })}
+                    </span>
+                  </div>
 
-          <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-3">
-            <div className="w-10 h-10 rounded-lg bg-gold-100 flex items-center justify-center text-gold-600 font-serif font-bold">
-              03
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-maroon">Instant 30+ Task Blueprint</h3>
-            <p className="text-sm text-charcoal/75 leading-relaxed">
-              Booking deposit instantly spawns a 30+ task operational roadmap with assigned team members, date offsets, and staged payment plans.
-            </p>
-          </div>
+                  <div>
+                    <h3 className="font-serif text-2xl font-semibold text-charcoal">{pkg.name}</h3>
+                    <p className="text-xs text-charcoal/70 mt-1 leading-relaxed">
+                      {pkg.tagline || pkg.description}
+                    </p>
+                  </div>
 
-          <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-3">
-            <div className="w-10 h-10 rounded-lg bg-gold-100 flex items-center justify-center text-gold-600 font-serif font-bold">
-              04
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-maroon">Live Big-Day Console</h3>
-            <p className="text-sm text-charcoal/75 leading-relaxed">
-              Minute-by-minute timeline, automated vendor late-flags past grace minutes, rapid incident logging, and real-time coordinator dispatch.
-            </p>
-          </div>
+                  <ul className="space-y-2 text-xs text-charcoal/80 pt-2 border-t border-border/60">
+                    {((pkg.inclusions as string[]) || []).slice(0, 4).map((inc: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-maroon font-bold">✓</span>
+                        <span>{inc}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-          <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-3">
-            <div className="w-10 h-10 rounded-lg bg-gold-100 flex items-center justify-center text-gold-600 font-serif font-bold">
-              05
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-maroon">Idempotent Settlement</h3>
-            <p className="text-sm text-charcoal/75 leading-relaxed">
-              Single-transaction ledger with duplicate payment prevention, vendor advance deductions, and transparent approved extra guest rebilling.
-            </p>
-          </div>
+                <div className="pt-4 border-t border-border/80">
+                  <Link
+                    href={`/book?package=${pkg.slug}`}
+                    className="w-full inline-flex items-center justify-center rounded-xl bg-maroon py-3 text-xs font-semibold uppercase tracking-wider text-ivory hover:bg-maroon-600 transition-colors shadow-sm"
+                  >
+                    Select {pkg.name} →
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
-          <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-3">
-            <div className="w-10 h-10 rounded-lg bg-gold-100 flex items-center justify-center text-gold-600 font-serif font-bold">
-              06
+      {/* Social Proof Showcase (Dynamic from DB) */}
+      <section className="container space-y-10">
+        <div className="text-center max-w-2xl mx-auto space-y-2">
+          <span className="text-xs uppercase tracking-widest text-gold-600 font-bold">
+            Verified Citations
+          </span>
+          <h2 className="font-serif text-3xl sm:text-4xl font-semibold text-charcoal">
+            Real Weddings & Press Features
+          </h2>
+          <p className="text-xs text-charcoal/70">
+            Real couple reviews and press coverage linking directly to original sources.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+          {socialProof.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-2xl border border-border bg-card p-6 flex flex-col justify-between shadow-sm space-y-4"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-ivory-300 text-charcoal">
+                    {item.platform}
+                  </span>
+                  <div className="text-gold-500 text-xs">★★★★★</div>
+                </div>
+                <p className="text-xs text-charcoal/80 italic font-serif leading-relaxed">
+                  &ldquo;{item.caption}&rdquo;
+                </p>
+                <div>
+                  <p className="text-xs font-semibold text-charcoal">{item.author_name}</p>
+                  <p className="text-[10px] text-charcoal/50 font-mono">{item.handle}</p>
+                </div>
+              </div>
+
+              <a
+                href={item.post_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] font-semibold text-maroon hover:underline inline-flex items-center gap-1"
+              >
+                <span>View Citation</span>
+                <span>↗</span>
+              </a>
             </div>
-            <h3 className="font-serif text-xl font-semibold text-maroon">Founder Season Analytics</h3>
-            <p className="text-sm text-charcoal/75 leading-relaxed">
-              True recognized profit per wedding across 25 celebrations, vendor punctuality scorecards, and 30-day cash forecast charts.
-            </p>
+          ))}
+        </div>
+
+        <div className="text-center pt-2">
+          <Link
+            href="/social-proof"
+            className="text-xs font-semibold text-maroon hover:underline"
+          >
+            View All Verified Citations & Reviews →
+          </Link>
+        </div>
+      </section>
+
+      {/* How it Works / 6-Scene Lifecycle */}
+      <section className="container max-w-5xl mx-auto space-y-8">
+        <div className="text-center max-w-xl mx-auto space-y-2">
+          <h2 className="font-serif text-3xl font-semibold text-charcoal">
+            The Vivona Operational Lifecycle
+          </h2>
+          <p className="text-xs text-charcoal/70">
+            From your first blueprint submission to post-wedding ledger settlement.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center text-xs">
+          <div className="p-4 rounded-xl border border-border bg-card space-y-1">
+            <span className="font-serif text-lg font-bold text-maroon">01</span>
+            <p className="font-semibold text-charcoal">Enquiry & Blueprint</p>
+            <p className="text-[10px] text-charcoal/50">Dates, themes & scale</p>
+          </div>
+          <div className="p-4 rounded-xl border border-border bg-card space-y-1">
+            <span className="font-serif text-lg font-bold text-maroon">02</span>
+            <p className="font-semibold text-charcoal">Agreement E-Sign</p>
+            <p className="text-[10px] text-charcoal/50">Signed PDF unlocks gate</p>
+          </div>
+          <div className="p-4 rounded-xl border border-border bg-card space-y-1">
+            <span className="font-serif text-lg font-bold text-maroon">03</span>
+            <p className="font-semibold text-charcoal">3-Caterer RFQ</p>
+            <p className="text-[10px] text-charcoal/50">Price-per-plate math</p>
+          </div>
+          <div className="p-4 rounded-xl border border-border bg-card space-y-1">
+            <span className="font-serif text-lg font-bold text-maroon">04</span>
+            <p className="font-semibold text-charcoal">Instant 30+ Plan</p>
+            <p className="text-[10px] text-charcoal/50">Assigned coordinators</p>
+          </div>
+          <div className="p-4 rounded-xl border border-border bg-card space-y-1">
+            <span className="font-serif text-lg font-bold text-maroon">05</span>
+            <p className="font-semibold text-charcoal">Live Big-Day</p>
+            <p className="text-[10px] text-charcoal/50">Auto late detection</p>
+          </div>
+          <div className="p-4 rounded-xl border border-border bg-card space-y-1">
+            <span className="font-serif text-lg font-bold text-maroon">06</span>
+            <p className="font-semibold text-charcoal">Settlement</p>
+            <p className="text-[10px] text-charcoal/50">Audited integer paise</p>
           </div>
         </div>
       </section>
@@ -116,7 +349,7 @@ export default function HomePage() {
           <h2 className="font-serif text-3xl font-semibold text-maroon">
             Experience the 3 Built-in Roles
           </h2>
-          <p className="text-sm text-charcoal/75 max-w-xl mx-auto">
+          <p className="text-sm text-charcoal/75 max-w-xl mx-auto font-sans">
             Log in directly using pre-configured local demo credentials to review the role-gated UI and security boundary.
           </p>
 

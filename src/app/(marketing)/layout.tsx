@@ -126,7 +126,7 @@ export default function MarketingLayout({
           <div className="flex gap-4 mt-2 sm:mt-0">
             <Link href="/login" className="hover:text-maroon">Staff & Client Portal</Link>
             <span>·</span>
-            <span>Odoo Hackathon 24H Build</span>
+            <span>Jaipur · Udaipur Luxury Wedding Architecture</span>
           </div>
         </div>
       </footer>
