@@ -10,6 +10,8 @@ export const metadata = {
     "Curated real wedding citations, Instagram features, press coverage, and Google client reviews for Vivona luxury destination weddings.",
 };
 
+export const revalidate = 60;
+
 async function getSocialProof(): Promise<SocialProof[]> {
   try {
     const admin = createAdminClient();

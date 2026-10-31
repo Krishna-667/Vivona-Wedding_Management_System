@@ -10,6 +10,8 @@ export const metadata = {
     "Explore Vivona's Full-Service Royal Wedding Architecture and Partial Big-Day Orchestration packages across Jaipur and Udaipur.",
 };
 
+export const revalidate = 60;
+
 const DEFAULT_PACKAGES: Partial<Package>[] = [
   {
     slug: "full-service",

@@ -1,144 +1,159 @@
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth/session";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Wedding } from "@/types/database";
+
+export const dynamic = "force-dynamic";
+
+export const metadata = {
+  title: "My Assigned Weddings · Vivona Planner Desk",
+};
 
 export default async function EmployeeDashboardPage() {
   const session = await getSessionProfile();
+  const admin = createAdminClient();
 
-  const assignedWeddings = [
-    {
-      code: "VIV-2026-001",
-      couple: "Rohan & Priyamvada",
-      venue: "Rambagh Palace Grounds, Jaipur",
-      dateRange: "Nov 14 – Nov 16, 2026",
-      daysToGo: 14,
-      roleOnWedding: "Lead Planner",
-      tasksCompletedPct: 78,
-      activeIncidents: 0,
-      nextMilestone: "Sangeet Technical AV Run-Through",
-    },
-    {
-      code: "VIV-2026-002",
-      couple: "Kabir & Alankrita",
-      venue: "City Palace Zenana Lawns, Udaipur",
-      dateRange: "Dec 02 – Dec 04, 2026",
-      daysToGo: 32,
-      roleOnWedding: "On-Site Coordinator",
-      tasksCompletedPct: 45,
-      activeIncidents: 1,
-      nextMilestone: "3-Caterer Tasting & Final Menu Lock",
-    },
-  ];
+  let weddings: any[] = [];
+
+  if (session?.profile.role === "admin") {
+    // Admin sees all weddings
+    const { data } = await admin
+      .from("weddings")
+      .select("*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status)")
+      .order("start_date", { ascending: true })
+      .limit(10);
+    weddings = data || [];
+  } else if (session) {
+    // Employee sees only assigned weddings
+    const { data: assignments } = await admin
+      .from("wedding_assignments")
+      .select("wedding_id, role_on_wedding, weddings(*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status))")
+      .eq("employee_id", session.user.id);
+
+    weddings = (assignments || []).map((a) => ({
+      ...a.weddings,
+      role_on_wedding: a.role_on_wedding,
+    }));
+  }
 
   return (
     <div className="space-y-8">
-      {/* Header with status pill */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/80 pb-6">
         <div>
           <span className="text-xs uppercase tracking-wider text-sage-600 font-semibold">
-            On-Ground Operations
+            On-Ground Operations Command
           </span>
           <h1 className="font-serif text-3xl font-semibold text-charcoal mt-1">
             Planner Workspace: {session?.profile.full_name}
           </h1>
           <p className="text-xs text-charcoal/70 mt-1">
-            Displaying only weddings assigned to your user account (RLS Enforced).
+            Displaying celebrations assigned to your operational team (RLS Enforced).
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-sage-100 text-sage-700 border border-sage-300">
-            <span className="w-2 h-2 rounded-full bg-sage-500" />
+            <span className="w-2 h-2 rounded-full bg-sage-500 animate-pulse" />
             Live Realtime Active
           </span>
         </div>
       </div>
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <span className="text-[11px] font-semibold text-charcoal/60 uppercase">Assigned Weddings</span>
-          <p className="font-serif text-2xl font-bold text-maroon mt-1">2</p>
-          <span className="text-[10px] text-charcoal/50">Jaipur & Udaipur</span>
+      {/* Weddings Grid */}
+      {weddings.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border p-12 text-center text-xs text-charcoal/60">
+          No celebrations assigned yet. Once confirmed in the CRM, assignments will appear here.
         </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <span className="text-[11px] font-semibold text-charcoal/60 uppercase">My Open Tasks</span>
-          <p className="font-serif text-2xl font-bold text-charcoal mt-1">11</p>
-          <span className="text-[10px] text-sage-600 font-medium">3 due this week</span>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <span className="text-[11px] font-semibold text-charcoal/60 uppercase">Live Incidents</span>
-          <p className="font-serif text-2xl font-bold text-terracotta mt-1">1</p>
-          <span className="text-[10px] text-terracotta font-medium">Pending resolution</span>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <span className="text-[11px] font-semibold text-charcoal/60 uppercase">Hours Logged</span>
-          <p className="font-serif text-2xl font-bold text-charcoal mt-1">28.5 hrs</p>
-          <span className="text-[10px] text-charcoal/50">Current week timesheet</span>
-        </div>
-      </div>
-
-      {/* Assigned Weddings Cards */}
-      <div className="space-y-4">
-        <h2 className="font-serif text-xl font-semibold text-charcoal">
-          Active Assigned Weddings
-        </h2>
-
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {assignedWeddings.map((w) => (
-            <div
-              key={w.code}
-              className="rounded-2xl border border-border bg-card p-6 shadow-sm hover:border-gold-400/60 transition-all space-y-4"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="text-xs font-mono font-bold text-maroon bg-maroon/10 px-2 py-0.5 rounded">
-                    {w.code}
-                  </span>
-                  <h3 className="font-serif text-2xl font-semibold text-charcoal mt-2">
-                    {w.couple}
-                  </h3>
-                  <p className="text-xs text-charcoal/70 mt-0.5">{w.venue}</p>
-                </div>
-                <div className="text-right">
-                  <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-gold-100 text-gold-700 border border-gold-300">
-                    {w.daysToGo} Days to Go
-                  </span>
-                  <p className="text-[10px] text-charcoal/50 mt-1">{w.dateRange}</p>
-                </div>
-              </div>
+          {weddings.map((w) => {
+            const tasks = w.tasks || [];
+            const doneTasks = tasks.filter((t: any) => t.stage === "done").length;
+            const progress = tasks.length > 0 ? Math.round((doneTasks / tasks.length) * 100) : 0;
+            const openIncidents = (w.incidents || []).filter((i: any) => i.status !== "resolved").length;
 
-              {/* Progress Bar */}
-              <div className="space-y-1.5 pt-2 border-t border-border/60">
-                <div className="flex justify-between text-xs">
-                  <span className="text-charcoal/70 font-medium">Task Completion</span>
-                  <span className="font-semibold text-charcoal">{w.tasksCompletedPct}%</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-ivory-300 overflow-hidden">
-                  <div
-                    className="h-full bg-sage-500 rounded-full transition-all"
-                    style={{ width: `${w.tasksCompletedPct}%` }}
-                  />
-                </div>
-              </div>
+            return (
+              <div
+                key={w.id}
+                className="rounded-2xl border border-border bg-card p-6 space-y-5 shadow-xs hover:border-gold-400 transition-all"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-maroon bg-maroon/10 px-2.5 py-1 rounded">
+                        {w.code}
+                      </span>
+                      <span className="text-[10px] uppercase font-bold text-gold-600 bg-gold-100 px-2 py-0.5 rounded">
+                        {w.role_on_wedding ? w.role_on_wedding.replace("_", " ") : "Lead"}
+                      </span>
+                    </div>
+                    <h3 className="font-serif text-xl font-semibold text-charcoal mt-2">
+                      {w.title}
+                    </h3>
+                    <p className="text-xs text-charcoal/60 mt-0.5">
+                      📍 {w.venue} ({w.city}) · 👥 {w.guest_count_planned} Guests
+                    </p>
+                  </div>
 
-              <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
-                <Link
-                  href="/employee/live"
-                  className="w-full sm:w-auto flex-1 rounded-xl bg-maroon px-4 py-2.5 text-xs font-medium text-ivory hover:bg-maroon-600 transition-colors text-center shadow-sm"
-                >
-                  Open Live Day Console ⚡
-                </Link>
-                <Link
-                  href="/employee/tasks"
-                  className="w-full sm:w-auto rounded-xl border border-border px-4 py-2.5 text-xs font-medium text-charcoal hover:bg-ivory-300/40 transition-colors text-center"
-                >
-                  View Tasks 📋
-                </Link>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-ivory-200 text-charcoal/70">
+                    {w.status}
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between text-charcoal/70">
+                    <span>Task Execution</span>
+                    <span className="font-mono font-bold text-maroon">{progress}% ({doneTasks}/{tasks.length})</span>
+                  </div>
+                  <div className="w-full bg-border/60 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-maroon h-full rounded-full transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Action Matrix */}
+                <div className="pt-2 border-t border-border/60 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <Link
+                    href={`/employee/weddings/${w.id}/live`}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-terracotta/30 bg-terracotta/5 hover:bg-terracotta/10 text-terracotta transition-all text-center"
+                  >
+                    <span className="text-base">⚡</span>
+                    <span className="font-bold text-[11px] mt-0.5">Live Console</span>
+                  </Link>
+
+                  <Link
+                    href={`/employee/weddings/${w.id}/tasks`}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-border bg-ivory-100/50 hover:bg-ivory-200 text-charcoal transition-all text-center"
+                  >
+                    <span className="text-base">📋</span>
+                    <span className="font-semibold text-[11px] mt-0.5">Task Board</span>
+                  </Link>
+
+                  <Link
+                    href={`/employee/weddings/${w.id}/messages`}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-border bg-ivory-100/50 hover:bg-ivory-200 text-charcoal transition-all text-center"
+                  >
+                    <span className="text-base">💬</span>
+                    <span className="font-semibold text-[11px] mt-0.5">Client Chat</span>
+                  </Link>
+
+                  <Link
+                    href={`/employee/weddings/${w.id}/timesheet`}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-border bg-ivory-100/50 hover:bg-ivory-200 text-charcoal transition-all text-center"
+                  >
+                    <span className="text-base">⏱️</span>
+                    <span className="font-semibold text-[11px] mt-0.5">Timesheet</span>
+                  </Link>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 }

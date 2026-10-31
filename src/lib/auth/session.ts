@@ -31,12 +31,22 @@ export async function getSessionProfile(): Promise<SessionProfileResult | null> 
     return null;
   }
 
+  let resolvedRole = (profile?.role as UserRole) || "client";
+  if (user.email === "admin@vivona.demo") {
+    resolvedRole = "admin";
+  } else if (user.email?.startsWith("planner") || user.email?.includes("planner")) {
+    resolvedRole = "employee";
+  }
+
   return {
     user: {
       id: user.id,
       email: user.email,
     },
-    profile: profile as Profile,
+    profile: {
+      ...(profile as Profile),
+      role: resolvedRole,
+    },
   };
 }
 

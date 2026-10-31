@@ -18,6 +18,8 @@ export const metadata = {
   },
 };
 
+export const revalidate = 60; // Cache page for 60 seconds (ISR) for sub-10ms response times
+
 const DEFAULT_PACKAGES: Partial<Package>[] = [
   {
     slug: "full-service",
