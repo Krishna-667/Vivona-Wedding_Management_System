@@ -136,4 +136,27 @@ describe("Phase 2: Booking Wizard & CRM Submission Validation", () => {
       expect(result.data.consent).toBe(false);
     }
   });
+
+  it("handles turnstile token parsing correctly", () => {
+    const bookingWithToken = {
+      type: "package" as const,
+      city: "Jaipur" as const,
+      preferredStartDate: "2026-11-14",
+      preferredEndDate: "2026-11-16",
+      guestCount: 200,
+      theme: "Royal Rajputana",
+      budgetMaxPaise: 350000000,
+      contactName: "Test User",
+      contactEmail: "test@domain.com",
+      contactPhone: "9829000000",
+      consent: true,
+      turnstileToken: "cf-test-token-12345",
+    };
+
+    const result = FullBookingSubmissionSchema.safeParse(bookingWithToken);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.turnstileToken).toBe("cf-test-token-12345");
+    }
+  });
 });

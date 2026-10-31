@@ -26,26 +26,35 @@ export interface BookingActionResult {
  * Verify Cloudflare Turnstile token
  */
 async function verifyTurnstileToken(token?: string): Promise<boolean> {
-  const secretKey = process.env.TURNSTILE_SECRET_KEY;
-  // If in development or test keys are used, allow pass
-  if (!secretKey || secretKey.startsWith("0x4AAAAAA") || process.env.NODE_ENV !== "production") {
+  if (!token || token.trim() === "") {
+    return false;
+  }
+
+  // Use provided secret key or Cloudflare's official dummy testing secret key
+  const secretKey =
+    process.env.TURNSTILE_SECRET_KEY || "1x0000000000000000000000000000000AA";
+
+  // Cloudflare test tokens
+  if (token === "dev-bypass-token" && process.env.NODE_ENV !== "production") {
     return true;
   }
 
-  if (!token) {
-    return false;
-  }
-
   try {
-    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `secret=${encodeURIComponent(secretKey)}&response=${encodeURIComponent(token)}`,
-    });
+    const res = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `secret=${encodeURIComponent(
+          secretKey
+        )}&response=${encodeURIComponent(token)}`,
+      }
+    );
     const data = await res.json();
     return !!data.success;
   } catch {
-    return false;
+    // If network fails in local non-production environment, allow fallback
+    return process.env.NODE_ENV !== "production";
   }
 }
 

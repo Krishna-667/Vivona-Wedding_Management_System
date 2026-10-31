@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { GoldKnotIcon } from "@/components/ui/logo";
 import { formatPaise } from "@/lib/utils";
 import { createEnquiryAction } from "@/app/actions/booking";
+import { Turnstile } from "@/components/ui/turnstile";
 import type { FullBookingSubmission } from "@/lib/validation/booking";
 
 interface BookingWizardProps {
@@ -55,6 +56,7 @@ export function BookingWizard({ initialPackageSlug }: BookingWizardProps) {
   const [contactPhone, setContactPhone] = React.useState<string>("");
   const [notes, setNotes] = React.useState<string>("");
   const [consent, setConsent] = React.useState<boolean>(true);
+  const [turnstileToken, setTurnstileToken] = React.useState<string>("");
 
   // Live estimated indicative cost calculation
   const indicativeCostPaise = React.useMemo(() => {
@@ -128,7 +130,7 @@ export function BookingWizard({ initialPackageSlug }: BookingWizardProps) {
       contactPhone,
       notes,
       consent,
-      turnstileToken: "dev-bypass-token",
+      turnstileToken: turnstileToken || (process.env.NODE_ENV !== "production" ? "dev-bypass-token" : ""),
     };
 
     try {
@@ -580,13 +582,13 @@ export function BookingWizard({ initialPackageSlug }: BookingWizardProps) {
                 />
               </div>
 
-              {/* Turnstile Spam Guard Placeholder */}
-              <div className="p-3 rounded-xl border border-border bg-ivory-100 flex items-center justify-between text-xs text-charcoal/70">
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-sage-500" />
-                  Cloudflare Turnstile Verified (Human)
-                </span>
-                <span className="text-[10px] text-charcoal/50">Protected by Turnstile</span>
+              {/* Turnstile Spam Guard */}
+              <div className="p-3 rounded-xl border border-border bg-ivory-100 flex flex-col items-center justify-center">
+                <Turnstile
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken("")}
+                  onError={() => setTurnstileToken("")}
+                />
               </div>
 
               {/* Consent checkbox */}
