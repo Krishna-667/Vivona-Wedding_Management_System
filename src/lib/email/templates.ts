@@ -160,7 +160,7 @@ export function renderEnquiryConfirmationEmail(params: {
       <div class="info-row"><span class="info-label">Planned Guests:</span> <span class="info-value">${params.guestCount} Guests</span></div>
     </div>
 
-    <p>Our lead planning concierge will contact you within 24 hours to schedule your preliminary consultation and present initial concept ideas.</p>
+    <p>Our lead planning concierge will contact you within one business day to schedule your preliminary consultation and present initial concept ideas.</p>
 
     <div style="text-align: center; margin-top: 28px;">
       <a href="${params.portalUrl}" class="button">Access Client Portal</a>

@@ -281,3 +281,59 @@ export interface ExtraCharge {
   approved_by: string | null;
   approved_at: string | null;
 }
+
+export interface EnquiryActivity {
+  id: string;
+  enquiry_id: string;
+  actor_id: string | null;
+  activity_type: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ProposalLine {
+  id: string;
+  proposal_id: string;
+  category: VendorCategory;
+  label: string;
+  qty: number;
+  unit: string;
+  unit_price_paise: bigint | number;
+  tax_pct: number;
+  total_paise: bigint | number;
+  display_order: number;
+}
+
+export interface Proposal {
+  id: string;
+  enquiry_id: string;
+  version: number;
+  status: ProposalStatus;
+  valid_until: string;
+  subtotal_paise: bigint | number;
+  tax_paise: bigint | number;
+  total_paise: bigint | number;
+  payment_plan: Array<{ kind: MilestoneKind; pct: number }>;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  proposal_lines?: ProposalLine[];
+}
+
+export interface Agreement {
+  id: string;
+  wedding_id: string | null;
+  enquiry_id: string | null;
+  client_id: string;
+  version: number;
+  body_markdown: string;
+  status: AgreementStatus;
+  signed_at: string | null;
+  signed_by_name: string | null;
+  signature_path: string | null;
+  signed_pdf_path: string | null;
+  signer_meta: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
