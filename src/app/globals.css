@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 39 56% 96%;        /* #FBF7F0 Ivory */
+    --foreground: 24 13% 11%;         /* #1F1A17 Charcoal */
+
+    --card: 0 0% 100%;                /* Clean luxury white card */
+    --card-foreground: 24 13% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 24 13% 11%;
+
+    --primary: 350 57% 26%;           /* #6B1D2A Royal Maroon */
+    --primary-foreground: 39 56% 96%; /* Ivory foreground */
+
+    --secondary: 40 25% 91%;          /* Soft warm sandstone */
+    --secondary-foreground: 24 13% 11%;
+
+    --muted: 40 22% 92%;
+    --muted-foreground: 24 8% 42%;
+
+    --accent: 42 54% 54%;             /* #C8A24A Antique Gold */
+    --accent-foreground: 24 13% 11%;
+
+    --destructive: 11 50% 47%;        /* #B5533C Terracotta */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 38 20% 86%;             /* Subtle warm sand border */
+    --input: 38 20% 86%;
+    --ring: 350 57% 26%;              /* Maroon focus ring */
+
+    --radius: 0.75rem;                /* 12px border radius */
+
+    /* Typography tokens */
+    --font-size-body: 1rem;
+    --line-height-body: 1.6;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    min-height: 100vh;
+  }
+
+  /* Accessible focus states */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+
+  /* Text selection highlight with antique gold tint */
+  ::selection {
+    @apply bg-accent/25 text-foreground;
+  }
+}
