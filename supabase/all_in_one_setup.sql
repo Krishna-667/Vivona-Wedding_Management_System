@@ -713,6 +713,11 @@ SET search_path = public, auth, pg_temp
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  -- Allow service_role key or postgres admin to seed/modify roles
+  IF (auth.jwt() ->> 'role') = 'service_role' OR current_user = 'postgres' OR current_user = 'supabase_admin' THEN
+    RETURN NEW;
+  END IF;
+
   -- If role or hourly_rate_paise is changing, ensure actor is admin
   IF (OLD.role IS DISTINCT FROM NEW.role OR OLD.hourly_rate_paise IS DISTINCT FROM NEW.hourly_rate_paise) THEN
     IF NOT public.is_admin() THEN

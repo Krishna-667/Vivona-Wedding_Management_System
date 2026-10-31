@@ -337,14 +337,19 @@ async function seed() {
   // 2. Seed Vendors
   console.log(`Seeding ${DEMO_VENDORS.length} vendors...`);
   for (const vendor of DEMO_VENDORS) {
-    const { error: vendorError } = await supabase.from("vendors").upsert(
-      {
-        ...vendor,
-      },
-      { onConflict: "name" }
-    );
-    if (vendorError) {
-      console.error(`Error seeding vendor ${vendor.name}:`, vendorError.message);
+    const { data: existingVendor } = await supabase
+      .from("vendors")
+      .select("id")
+      .eq("name", vendor.name)
+      .maybeSingle();
+
+    if (existingVendor) {
+      await supabase.from("vendors").update(vendor).eq("id", existingVendor.id);
+    } else {
+      const { error: vendorError } = await supabase.from("vendors").insert(vendor);
+      if (vendorError) {
+        console.error(`Error inserting vendor ${vendor.name}:`, vendorError.message);
+      }
     }
   }
   console.log("✓ Seeded vendors successfully.");
@@ -352,14 +357,19 @@ async function seed() {
   // 3. Seed Social Proof
   console.log(`Seeding ${DEMO_SOCIAL_PROOF.length} social proof entries...`);
   for (const item of DEMO_SOCIAL_PROOF) {
-    const { error: spError } = await supabase.from("social_proof").upsert(
-      {
-        ...item,
-      },
-      { onConflict: "post_url" }
-    );
-    if (spError) {
-      console.error(`Error seeding social proof ${item.handle}:`, spError.message);
+    const { data: existingSp } = await supabase
+      .from("social_proof")
+      .select("id")
+      .eq("post_url", item.post_url)
+      .maybeSingle();
+
+    if (existingSp) {
+      await supabase.from("social_proof").update(item).eq("id", existingSp.id);
+    } else {
+      const { error: spError } = await supabase.from("social_proof").insert(item);
+      if (spError) {
+        console.error(`Error inserting social proof ${item.handle}:`, spError.message);
+      }
     }
   }
   console.log("✓ Seeded social proof entries successfully.");

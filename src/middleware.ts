@@ -38,6 +38,11 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
+  // 0. Skip API routes from middleware profile/session redirection
+  if (path.startsWith("/api")) {
+    return response;
+  }
+
   // 1. Unauthenticated checks for protected routes
   const isProtectedAdmin = path.startsWith("/admin");
   const isProtectedEmployee = path.startsWith("/employee");
