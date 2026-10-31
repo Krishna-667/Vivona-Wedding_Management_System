@@ -74,7 +74,7 @@ export default async function ClientRequestsPage() {
                       {enq.code}
                     </span>
                     <h2 className="font-serif text-xl font-semibold text-charcoal mt-2">
-                      {enq.theme || "Rajasthan Royal Wedding Blueprint"}
+                      {enq.theme || "Luxury Wedding Blueprint"}
                     </h2>
                     <p className="text-xs text-charcoal/60 mt-0.5">
                       Destination: {enq.city} · Submitted on {new Date(enq.created_at).toLocaleDateString("en-IN")}

@@ -13,16 +13,16 @@ export const metadata = {
 const DEFAULT_PACKAGES: Partial<Package>[] = [
   {
     slug: "full-service",
-    name: "Full-Service Royal Wedding",
+    name: "Full-Service Luxury Wedding",
     type: "full_service",
-    tagline: "Complete 3-Day Wedding Architecture & White-Glove Production in Rajasthan",
+    tagline: "Complete Multi-Day Wedding Architecture & White-Glove Production",
     description:
-      "End-to-end management spanning bespoke heritage theme design, palace venue curation, 18+ vendor RFQ negotiations, 400+ guest logistics, rehearsal orchestration, and minute-by-minute live day operations.",
+      "End-to-end management spanning bespoke heritage theme design, luxury venue curation, 18+ vendor RFQ negotiations, 400+ guest logistics, rehearsal orchestration, and minute-by-minute live day operations.",
     starting_price_paise: 350000000,
     inclusions: [
-      "Full wedding concept, mood boards and palace decor styling",
+      "Full wedding concept, mood boards and signature decor styling",
       "Comprehensive vendor curation, RFQ bidding and contract management",
-      "Staged 3-day guest hospitality, luxury airport transfers and room drops",
+      "Staged multi-day guest hospitality, luxury airport transfers and room drops",
       "Dedicated lead planner + 3 on-site coordinators throughout the season",
       "Minute-by-minute live digital console and vendor check-in tracking",
       "Post-wedding itemized settlement and audit reconciliation",
@@ -83,7 +83,7 @@ export default async function PackagesPage() {
       <div className="text-center max-w-3xl mx-auto space-y-4">
         <div className="inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-50/60 px-4 py-1 text-xs font-semibold text-charcoal">
           <GoldKnotIcon className="w-3.5 h-3.5 text-gold-500" />
-          <span>Tailored Rajasthan Wedding Architecture</span>
+          <span>Tailored Luxury Wedding Architecture</span>
         </div>
         <h1 className="font-serif text-4xl sm:text-6xl font-semibold text-maroon">
           Curated Experiences & Transparent Pricing

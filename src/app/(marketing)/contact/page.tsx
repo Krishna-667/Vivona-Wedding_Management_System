@@ -46,7 +46,7 @@ export default function ContactPage() {
             <div className="space-y-4 text-xs text-charcoal/80">
               <div className="p-4 rounded-xl border border-border bg-card">
                 <span className="font-bold text-maroon uppercase tracking-wider block">Jaipur Headquarters</span>
-                <p className="mt-1 font-medium text-charcoal">C-Scheme, Ashok Nagar, Jaipur, Rajasthan 302001</p>
+                <p className="mt-1 font-medium text-charcoal">C-Scheme, Ashok Nagar, Jaipur 302001</p>
                 <p className="text-charcoal/60 mt-0.5">Focus: Rambagh Palace, Fairmont, Jai Mahal, Samode</p>
               </div>
 

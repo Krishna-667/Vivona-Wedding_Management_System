@@ -7,7 +7,7 @@ import { GoldKnotIcon } from "@/components/ui/logo";
 export const metadata = {
   title: "Social Proof, Press & Verified Client Reviews · Vivona",
   description:
-    "Curated real wedding citations, Instagram features, press coverage, and Google client reviews for Vivona luxury weddings in Rajasthan.",
+    "Curated real wedding citations, Instagram features, press coverage, and Google client reviews for Vivona luxury destination weddings.",
 };
 
 async function getSocialProof(): Promise<SocialProof[]> {

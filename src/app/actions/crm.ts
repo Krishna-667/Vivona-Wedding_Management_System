@@ -157,12 +157,12 @@ export async function sendAgreementAction(enquiryId: string): Promise<ActionResu
   // Legal agreement markdown contract
   const contractBody = `# VIVONA LUXURY WEDDING MANAGEMENT AGREEMENT
 **Parties:** Vivona Luxury Weddings ("Agency") and ${enquiry.contact_name} ("Client")  
-**Destination:** ${enquiry.city}, Rajasthan  
+**Destination:** ${enquiry.city}  
 **Planned Capacity:** ${enquiry.guest_count} Guests  
 **Reference Code:** ${enquiry.code}
 
 ### 1. Scope of Service & Operational Mandate
-1.1 The Agency agrees to provide turnkey wedding planning, palace venue coordination, vendor procurement (including structured 3-caterer tenders), and live big-day digital console tracking.
+1.1 The Agency agrees to provide turnkey wedding planning, venue coordination, vendor procurement (including structured 3-caterer tenders), and live big-day digital console tracking.
 1.2 Upon execution of this Agreement, the Client receives immediate access to the Vivona Client Portal, unlocking the Vendor Shortlist, Floor Plans, and Milestone Schedule.
 
 ### 2. Commercial Terms & Integer Staged Payment Plan

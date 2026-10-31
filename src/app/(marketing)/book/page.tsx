@@ -3,9 +3,9 @@ import { BookingWizard } from "@/components/features/booking/booking-wizard";
 import { GoldKnotIcon } from "@/components/ui/logo";
 
 export const metadata = {
-  title: "Book Your Royal Wedding · Vivona Rajasthan",
+  title: "Book Your Celebration · Vivona Luxury Weddings",
   description:
-    "Design your tailored wedding blueprint for Jaipur or Udaipur. Choose packages or build a custom service architecture with instant indicative cost estimation.",
+    "Design your tailored wedding blueprint. Choose packages or build a custom service architecture with instant indicative cost estimation.",
 };
 
 export default function BookPage() {

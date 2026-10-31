@@ -133,7 +133,7 @@ export function EnquiryManager({
         { kind: "advance", pct: advancePct },
         { kind: "final", pct: finalPct },
       ],
-      notes: "Commercial quote prefilled from Rajasthan palace vendor standard rates.",
+      notes: "Commercial quote prefilled from luxury vendor standard rates.",
     });
     setLoading(false);
 

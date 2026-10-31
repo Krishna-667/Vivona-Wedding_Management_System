@@ -27,7 +27,7 @@ export default async function ClientDashboardPage() {
             Namaste, {session?.profile.full_name || "Esteemed Client"}
           </h1>
           <p className="text-sm text-charcoal/70 mt-1">
-            Welcome to your dedicated Vivona portal. Track your Rajasthan wedding lifecycle in real time.
+            Welcome to your dedicated Vivona portal. Track your luxury wedding lifecycle in real time.
           </p>
         </div>
         <Link

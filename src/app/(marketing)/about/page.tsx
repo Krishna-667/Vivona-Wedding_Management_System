@@ -5,7 +5,7 @@ import { BRAND } from "@/lib/brand";
 export const metadata = {
   title: "About Our Agency · Vivona Luxury Weddings",
   description:
-    "Learn about Vivona's operational philosophy, heritage architecture standards, and dedicated luxury wedding planning team in Jaipur and Udaipur.",
+    "Learn about Vivona's operational philosophy, luxury wedding management standards, and dedicated agency team.",
 };
 
 export default function AboutPage() {
@@ -15,13 +15,13 @@ export default function AboutPage() {
       <div className="text-center space-y-4 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-50/60 px-4 py-1 text-xs font-semibold text-charcoal">
           <GoldKnotIcon className="w-3.5 h-3.5 text-gold-500" />
-          <span>Jaipur · Udaipur Luxury Wedding Architecture</span>
+          <span>Luxury Destination Wedding Architecture</span>
         </div>
         <h1 className="font-serif text-4xl sm:text-6xl font-semibold text-maroon">
           About Vivona
         </h1>
         <p className="text-sm sm:text-base text-charcoal/70 leading-relaxed font-sans">
-          Born from the recognition that luxury multi-day palace weddings demand the rigorous discipline of an aviation operations center paired with royal Rajasthani hospitality.
+          Born from the recognition that luxury multi-day celebrations demand the rigorous discipline of an operations center paired with warm, royal hospitality.
         </p>
       </div>
 
@@ -32,10 +32,10 @@ export default function AboutPage() {
             Our Purpose
           </span>
           <h2 className="font-serif text-3xl font-semibold text-charcoal">
-            The Digital Backbone of High-Stakes Rajasthan Celebrations
+            The Digital Backbone of High-Stakes Celebrations
           </h2>
           <p className="text-xs sm:text-sm text-charcoal/75 leading-relaxed font-sans">
-            A typical three-day celebration in Rajasthan involves 400+ guests traveling from across the globe, 18+ independent luxury vendors (caterers, florists, percussionists, vintage car fleets), and budgets spanning multiple crores.
+            A typical three-day celebration involves 400+ guests traveling from across the globe, 18+ independent luxury vendors (caterers, florists, percussionists, luxury chauffeur fleets), and budgets spanning multiple crores.
           </p>
           <p className="text-xs sm:text-sm text-charcoal/75 leading-relaxed font-sans">
             For years, the industry relied on fragmented WhatsApp groups, lost paper checklists, and unitemized invoices discovered months after the wedding. Vivona was built to replace that chaos with an integrated digital command center.
@@ -53,11 +53,11 @@ export default function AboutPage() {
             </div>
             <div>
               <p className="font-semibold text-charcoal">2. Live Big-Day Arrival Enforcement</p>
-              <p className="text-charcoal/60 mt-0.5">Minute-by-minute timelines with automated late-arrival flags past grace periods ensure the Baraat and Varmala never suffer delays.</p>
+              <p className="text-charcoal/60 mt-0.5">Minute-by-minute timelines with automated late-arrival flags past grace periods ensure the Baraat and ceremonies never suffer delays.</p>
             </div>
             <div>
               <p className="font-semibold text-charcoal">3. Exclusive Capacity</p>
-              <p className="text-charcoal/60 mt-0.5">We strictly limit our season to 25 luxury weddings across Jaipur and Udaipur, providing white-glove focus to every family.</p>
+              <p className="text-charcoal/60 mt-0.5">We strictly limit our season to 25 luxury weddings, providing white-glove focus to every family.</p>
             </div>
           </div>
         </div>

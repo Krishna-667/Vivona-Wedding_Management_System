@@ -21,7 +21,7 @@ export const BookingStep2Schema = z.object({
   theme: z.string().min(2, "Please choose or specify an aesthetic theme."),
   budgetMaxRupees: z.coerce
     .number()
-    .min(1000000, "Minimum budget for our Rajasthan production tier is ₹10 Lakhs."),
+    .min(1000000, "Minimum budget for our production tier is ₹10 Lakhs."),
 });
 
 export const CustomServiceItemSchema = z.object({

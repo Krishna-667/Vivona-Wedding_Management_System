@@ -19,7 +19,7 @@ export function GoldKnotIcon({ className }: { className?: string }) {
       className={cn("w-6 h-6 inline-block shrink-0", className)}
       aria-hidden="true"
     >
-      {/* Rajasthani Heritage Infinity Knot */}
+      {/* Signature Heritage Infinity Knot */}
       <path
         d="M16 6C12 6 9 9 9 13C9 17 14 20 16 22C18 20 23 17 23 13C23 9 20 6 16 6Z"
         stroke="currentColor"
@@ -98,7 +98,7 @@ export function Logo({
           </span>
           {showTagline && (
             <span className="text-[10px] tracking-[0.2em] uppercase text-charcoal/60 mt-1 font-sans">
-              Jaipur · Udaipur
+              Luxury Weddings
             </span>
           )}
         </div>

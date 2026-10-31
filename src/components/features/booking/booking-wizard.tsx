@@ -248,7 +248,7 @@ export function BookingWizard({ initialPackageSlug }: BookingWizardProps) {
                     Custom Wedding Blueprint
                   </span>
                   <p className="text-xs text-charcoal/70 mt-0.5">
-                    Select specific modules: palace venue, 3-caterer comparison, AV rigging, or decor.
+                    Select specific modules: luxury venue, 3-caterer comparison, AV rigging, or decor.
                   </p>
                 </div>
                 <span className="text-xs font-semibold text-gold-700 bg-gold-100 px-3 py-1 rounded-full">
@@ -264,10 +264,10 @@ export function BookingWizard({ initialPackageSlug }: BookingWizardProps) {
           <div className="space-y-6">
             <div>
               <h2 className="font-serif text-2xl font-semibold text-charcoal">
-                Ceremony Dates & Scale in Rajasthan
+                Ceremony Dates & Scale
               </h2>
               <p className="text-xs text-charcoal/70 mt-1 font-sans">
-                Tell us where and when you wish to host your three-day celebrations.
+                Tell us where and when you wish to host your celebrations.
               </p>
             </div>
 

@@ -123,14 +123,14 @@ function baseEmailWrapper({
   <div class="wrapper">
     <div class="header">
       <div class="header-logo">${BRAND.name}</div>
-      <div class="header-sub">Luxury Rajasthan Wedding Management · Jaipur & Udaipur</div>
+      <div class="header-sub">Luxury Destination Wedding Management</div>
     </div>
     <div class="body">
       <h1 class="heading">${heading}</h1>
       ${contentHtml}
     </div>
     <div class="footer">
-      <p style="margin: 0 0 6px 0;"><strong>${BRAND.legalName}</strong> · C-Scheme, Jaipur & Lake Palace Road, Udaipur</p>
+      <p style="margin: 0 0 6px 0;"><strong>${BRAND.legalName}</strong> · Operations & Concierge</p>
       <p style="margin: 0;">This is a confidential communication regarding luxury wedding management.</p>
     </div>
   </div>

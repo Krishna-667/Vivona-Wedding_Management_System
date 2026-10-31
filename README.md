@@ -4,9 +4,9 @@
 
 **One platform for the whole wedding, from the first enquiry to the final vendor payment.**
 
-Vivona is an operations platform for a luxury wedding planning agency operating in Jaipur and Udaipur that plans about 25 three-day weddings a season. It replaces WhatsApp groups, PDF quotes, paper checklists and payment notebooks with a single, role-based web app backed by a real database.
+Vivona is an operations platform for a luxury wedding planning agency planning multi-day destination weddings. It replaces WhatsApp groups, PDF quotes, paper checklists and payment notebooks with a single, role-based web app backed by a real database.
 
-- **Built for:** Odoo Hackathon, 24-hour coding marathon
+- **Product:** Vivona Luxury Wedding Management Platform
 - **Stack:** Next.js 14 · TypeScript (strict) · Supabase (Postgres, Auth, RLS, Realtime, Storage) · Tailwind · shadcn/ui
 
 ---
@@ -330,6 +330,6 @@ Hosting is planned separately and is not configured in this repository. The app 
 - Email delivery uses Resend's test sender until a domain is verified; every email also creates an in-app notification.
 - Social proof is admin-curated rather than pulled live from social platforms.
 
-## Acknowledgements
+## Notes
 
-Built for the Odoo Hackathon. Demo names and data are fictional.
+Demo names and data are fictional.

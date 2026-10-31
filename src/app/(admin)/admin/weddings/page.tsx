@@ -33,10 +33,10 @@ export default async function AdminWeddingsPage() {
             Operational Portfolio
           </span>
           <h1 className="font-serif text-3xl font-semibold text-charcoal mt-1">
-            Confirmed Rajasthan Weddings ({weddingList.length})
+            Confirmed Luxury Weddings ({weddingList.length})
           </h1>
           <p className="text-xs text-charcoal/70 mt-1">
-            Active palace weddings across Jaipur and Udaipur. Every wedding features 30+ auto-generated tasks, staged payment milestones, and dedicated coordination.
+            Active luxury destination weddings. Every wedding features 30+ auto-generated tasks, staged payment milestones, and dedicated coordination.
           </p>
         </div>
 

@@ -11,10 +11,10 @@ export const metadata = {
 
 const DEFAULT_AGREEMENT_TEXT = `
 ### 1. PARTIES & ENGAGEMENT
-This Wedding Operations & Architecture Agreement ("Agreement") is executed between **Vivona Luxury Weddings** ("Vivona") and the undersigned couple ("the Client"). Vivona agrees to act as exclusive wedding architecture and operational commander for the scheduled three-day Rajasthan celebration.
+This Wedding Operations & Architecture Agreement ("Agreement") is executed between **Vivona Luxury Weddings** ("Vivona") and the undersigned couple ("the Client"). Vivona agrees to act as exclusive wedding architecture and operational commander for the scheduled multi-day celebration.
 
 ### 2. SCOPE OF SERVICES
-1. **Vendor Curation & Tendering:** Comprehensive vendor RFQ comparisons across catering, palace venue, decor, audio-visual engineering, and cinematography.
+1. **Vendor Curation & Tendering:** Comprehensive vendor RFQ comparisons across catering, venue, decor, audio-visual engineering, and cinematography.
 2. **On-Site Operational Command:** Dedicated Lead Planner and On-Site Coordinators managing the live event console, minute-by-minute timeline, and vendor arrival enforcement.
 3. **Reconciled Financial Ledger:** Transparent accounting with every vendor bill, advance deduction, and approved extra charge tracked in integer paise.
 
@@ -25,10 +25,10 @@ The total recognized contract value shall be remitted strictly in three staged m
 - **Milestone 3 (Final Settlement):** 50% reconciled and settled within seven (7) days following event conclusion.
 
 ### 4. THE AGREEMENT GATE
-The Client explicitly acknowledges that detailed vendor contracts, pricing line-items, and palace floor plan blueprints remain proprietary and confidential until this Agreement is executed and the booking deposit is recorded.
+The Client explicitly acknowledges that detailed vendor contracts, pricing line-items, and venue floor plan blueprints remain proprietary and confidential until this Agreement is executed and the booking deposit is recorded.
 
 ### 5. JURISDICTION
-This Agreement shall be governed by the laws of India, with exclusive jurisdiction in the courts of Jaipur, Rajasthan.
+This Agreement shall be governed by the laws of India, with exclusive jurisdiction in the competent commercial courts of India.
 `;
 
 export default async function ClientAgreementPage() {

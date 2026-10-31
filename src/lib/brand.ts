@@ -6,10 +6,10 @@
 export const BRAND = {
   name: process.env.NEXT_PUBLIC_APP_NAME || "Vivona",
   legalName: "Vivona Luxury Weddings",
-  tagline: "The Digital Backbone of Luxury Weddings in Rajasthan",
+  tagline: "The Digital Backbone of Luxury Weddings",
   description:
-    "End-to-end operational platform for luxury three-day weddings across Jaipur and Udaipur.",
-  cities: ["Jaipur", "Udaipur"] as const,
+    "End-to-end operational platform for premier luxury multi-day destination weddings.",
+  cities: ["Jaipur", "Udaipur", "Goa", "Destination"] as const,
   weddingCodePrefix: "VIV",
   currency: {
     symbol: "₹",

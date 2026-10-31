@@ -192,10 +192,10 @@ export default async function AdminDashboardPage() {
           <div className="flex items-center justify-between border-b border-border/60 pb-4">
             <div>
               <h2 className="font-serif text-xl font-semibold text-charcoal">
-                Active & Upcoming Royal Weddings
+                Active & Upcoming Luxury Weddings
               </h2>
               <p className="text-xs text-charcoal/60 mt-0.5">
-                Current Rajasthan calendar & operational execution
+                Current season calendar & operational execution
               </p>
             </div>
             <Link

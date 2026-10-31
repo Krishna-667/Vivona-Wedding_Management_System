@@ -52,7 +52,7 @@ export default async function AdminVendorsPage({
             Vendor Directory & Side-by-Side RFQs
           </h1>
           <p className="text-xs text-charcoal/70 mt-1">
-            Manage Rajasthan’s premier vendor network. Compare multi-caterer bids, per-plate costs, and overtime fees.
+            Manage your premier luxury vendor network. Compare multi-caterer bids, per-plate costs, and overtime fees.
           </p>
         </div>
       </div>

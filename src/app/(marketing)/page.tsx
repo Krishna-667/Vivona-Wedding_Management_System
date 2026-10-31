@@ -6,13 +6,13 @@ import { BRAND } from "@/lib/brand";
 import type { Package, SocialProof } from "@/types/database";
 
 export const metadata = {
-  title: "Vivona · Luxury Rajasthan Wedding Planning & Operations",
+  title: "Vivona · Luxury Wedding Planning & Operations",
   description:
-    "The digital backbone of luxury three-day palace weddings across Jaipur and Udaipur. Replaces WhatsApp groups and paper checklists with real-time operational precision.",
+    "The digital backbone of luxury multi-day destination weddings. Replaces WhatsApp groups and paper checklists with real-time operational precision.",
   openGraph: {
-    title: "Vivona · Luxury Rajasthan Wedding Planning & Operations",
+    title: "Vivona · Luxury Wedding Planning & Operations",
     description:
-      "Exclusive 25 weddings per season in Jaipur and Udaipur. Transparent crore-scale budgeting, 3-caterer price-per-plate comparison, and live big-day enforcement.",
+      "Exclusive 25 weddings per season. Transparent crore-scale budgeting, 3-caterer price-per-plate comparison, and live big-day enforcement.",
     type: "website",
     locale: "en_IN",
   },
@@ -23,7 +23,7 @@ const DEFAULT_PACKAGES: Partial<Package>[] = [
     slug: "full-service",
     name: "Full-Service Royal Wedding",
     type: "full_service",
-    tagline: "Complete 3-Day Wedding Architecture & White-Glove Production in Rajasthan",
+    tagline: "Complete 3-Day Wedding Architecture & White-Glove Production for Luxury Destinations",
     starting_price_paise: 350000000,
     inclusions: [
       "Full palace concept, mood boards and decor architecture",
@@ -104,34 +104,58 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-24 py-12 md:py-20">
-      {/* Hero Section */}
-      <section className="container text-center space-y-6 max-w-4xl">
-        <div className="inline-flex items-center gap-2 rounded-full border border-gold-400/40 bg-gold-50/60 px-4 py-1.5 text-xs font-medium text-charcoal">
-          <GoldKnotIcon className="w-3.5 h-3.5 text-gold-500" />
-          <span>Jaipur & Udaipur · Exclusive 25 Weddings / Season</span>
-        </div>
+      {/* Hero Section with Wedding Stage Background */}
+      <section className="relative overflow-hidden rounded-3xl border border-gold-400/30 shadow-xl mx-auto max-w-7xl">
+        {/* Background Image with Opacity & Gradient Overlay */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-700"
+          style={{ backgroundImage: `url('/images/hero-wedding-stage.jpg')` }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#FBF7F0]/85 via-[#FBF7F0]/80 to-[#FBF7F0]/95 backdrop-blur-[1.5px]" />
 
-        <h1 className="font-serif text-4xl sm:text-6xl md:text-7xl font-semibold tracking-tight text-maroon leading-[1.1]">
-          The Digital Backbone of Luxury Weddings in Rajasthan
-        </h1>
+        {/* Content Container */}
+        <div className="relative z-10 container text-center space-y-7 py-20 sm:py-28 md:py-32 max-w-4xl px-4 sm:px-8">
+          {/* Top Pill Badge */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-gold-400/50 bg-[#FBF7F0]/90 px-4 py-1.5 text-xs font-semibold text-charcoal shadow-xs">
+            <GoldKnotIcon className="w-3.5 h-3.5 text-gold-500" />
+            <span>Exclusive 25 Weddings / Season</span>
+          </div>
 
-        <p className="text-base sm:text-lg text-charcoal/80 max-w-2xl mx-auto font-sans leading-relaxed">
-          Replacing chaotic WhatsApp groups and paper diaries with an end-to-end operational engine: from first consultation to 3-caterer quote comparison, instant 30-task orchestration, and real-time live day check-ins.
-        </p>
+          {/* Main Headline */}
+          <h1 className="font-serif text-4xl sm:text-6xl md:text-7xl font-semibold tracking-tight text-maroon leading-[1.12]">
+            The Digital Backbone of Luxury Weddings
+          </h1>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-          <Link
-            href="/book"
-            className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-maroon px-8 py-3.5 text-base font-medium text-ivory hover:bg-maroon-600 transition-colors shadow-md"
-          >
-            Start Your Wedding Plan →
-          </Link>
-          <Link
-            href="/packages"
-            className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-border bg-card px-8 py-3.5 text-base font-medium text-charcoal hover:bg-ivory-300/50 transition-colors"
-          >
-            Explore Packages & Pricing
-          </Link>
+          {/* Subtitle */}
+          <p className="text-base sm:text-lg text-charcoal/85 max-w-2xl mx-auto font-sans leading-relaxed font-normal">
+            Replacing chaotic WhatsApp groups and paper diaries with an end-to-end operational engine: from first consultation to 3-caterer quote comparison, instant 30-task orchestration, and real-time live day check-ins.
+          </p>
+
+          {/* Two Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+            <Link
+              href="/book"
+              className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-maroon px-8 py-3.5 text-base font-semibold text-ivory hover:bg-maroon-600 transition-all shadow-md hover:shadow-lg"
+            >
+              Start Your Wedding Plan
+            </Link>
+            <Link
+              href="/login"
+              className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-charcoal/20 bg-card/90 backdrop-blur-xs px-8 py-3.5 text-base font-semibold text-charcoal hover:bg-card transition-all shadow-sm"
+            >
+              Enter Role Portal
+            </Link>
+          </div>
+
+          {/* Sub-heading */}
+          <div className="pt-8 border-t border-gold-400/30 max-w-xl mx-auto">
+            <h2 className="font-serif text-xl sm:text-2xl font-semibold text-maroon">
+              Engineered for High-Stakes Celebrations
+            </h2>
+            <p className="text-xs sm:text-sm text-charcoal/70 mt-1">
+              How Vivona solves the 6 operational friction points of crore-scale luxury weddings.
+            </p>
+          </div>
         </div>
       </section>
 

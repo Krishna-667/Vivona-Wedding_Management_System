@@ -37,3 +37,6 @@ next-env.d.ts
 
 # supabase local db artifacts
 .supabase/
+
+# raw user uploads in root
+/*.jpeg

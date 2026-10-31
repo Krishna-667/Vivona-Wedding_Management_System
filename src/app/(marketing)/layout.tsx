@@ -63,16 +63,16 @@ export default function MarketingLayout({
       {/* Main Page Content */}
       <main className="flex-1">{children}</main>
 
-      {/* Luxury Rajasthani Heritage Footer */}
+      {/* Luxury Brand Footer */}
       <footer className="border-t border-border/80 bg-ivory-300/40 py-14 text-charcoal">
         <div className="container grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="md:col-span-2 space-y-4">
             <Logo size="md" showTagline />
             <p className="text-sm text-charcoal/70 max-w-md font-sans">
-              Vivona is the high-performance digital backbone for premier palace weddings across Jaipur and Udaipur. Delivering precision operations, transparent crore-scale budgeting, and live day-of orchestration.
+              Vivona is the high-performance digital backbone for premier luxury weddings and destination celebrations. Delivering precision operations, transparent crore-scale budgeting, and live day-of orchestration.
             </p>
             <p className="text-xs text-charcoal/50">
-              Operating at Rambagh Palace, City Palace Udaipur, Jagmandir Island, and Fairmont Jaipur.
+              Operating across luxury palatial estates, scenic coastal resorts, and premier heritage destinations.
             </p>
           </div>
 
