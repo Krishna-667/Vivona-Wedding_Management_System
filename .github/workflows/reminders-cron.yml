@@ -1,0 +1,40 @@
+name: Vivona Daily Reminders Cron
+
+on:
+  schedule:
+    # Runs daily at 03:30 UTC (09:00 AM Indian Standard Time)
+    - cron: "30 3 * * *"
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  run-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vivona Reminders Endpoint
+        run: |
+          SITE_URL="${{ secrets.NEXT_PUBLIC_SITE_URL }}"
+          CRON_SECRET="${{ secrets.CRON_SECRET }}"
+
+          if [ -z "$SITE_URL" ]; then
+            echo "NEXT_PUBLIC_SITE_URL secret is not set. Please configure it in GitHub Repository Settings -> Secrets."
+            exit 1
+          fi
+
+          echo "Triggering reminders at $SITE_URL/api/cron/reminders ..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "$SITE_URL/api/cron/reminders" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json")
+
+          HTTP_BODY=$(echo "$RESPONSE" | sed -e '$d')
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n 1 | cut -d':' -f2)
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "Cron request failed with status $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "Daily reminders executed successfully."

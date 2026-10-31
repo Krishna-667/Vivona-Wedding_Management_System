@@ -15,7 +15,8 @@
     "db:reset": "supabase db reset",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed-season": "tsx scripts/seed-season.ts",
-    "db:types": "supabase gen types typescript --local > src/types/supabase.ts"
+    "db:types": "supabase gen types typescript --local > src/types/supabase.ts",
+    "cron:run": "tsx scripts/trigger-cron.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
