@@ -12,7 +12,7 @@ export default async function ClientLayout({
   const session = await getSessionProfile();
 
   if (!session) {
-    redirect("/login?redirectTo=/client");
+    redirect("/login");
   }
 
   const clientNav = [

@@ -48,8 +48,7 @@ function LoginForm() {
       }
 
       toast.success(`Welcome back! Redirecting to ${res.data.role} portal...`);
-      router.push(res.data.redirectTo);
-      router.refresh();
+      window.location.href = res.data.redirectTo;
     } catch {
       setErrorMsg("An unexpected connection error occurred.");
       toast.error("Failed to authenticate.");

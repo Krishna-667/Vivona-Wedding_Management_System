@@ -19,9 +19,17 @@ const NAV_ITEMS: NavItem[] = [
   { label: "The Agency", href: "/about" },
 ];
 
+function useSafePathname() {
+  try {
+    return usePathname() || "";
+  } catch {
+    return "";
+  }
+}
+
 export function MarketingMobileNav() {
   const [isOpen, setIsOpen] = React.useState(false);
-  const pathname = usePathname();
+  const pathname = useSafePathname();
 
   // Close drawer when path changes
   React.useEffect(() => {

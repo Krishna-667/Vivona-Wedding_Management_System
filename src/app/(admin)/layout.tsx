@@ -13,7 +13,7 @@ export default async function AdminLayout({
   const session = await getSessionProfile();
 
   if (!session || session.profile.role !== "admin") {
-    redirect("/login?redirectTo=/admin");
+    redirect("/login");
   }
 
   const adminNav = [

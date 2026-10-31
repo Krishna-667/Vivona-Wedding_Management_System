@@ -12,7 +12,7 @@ export default async function EmployeeLayout({
   const session = await getSessionProfile();
 
   if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
-    redirect("/login?redirectTo=/employee");
+    redirect("/login");
   }
 
   const navItems = [

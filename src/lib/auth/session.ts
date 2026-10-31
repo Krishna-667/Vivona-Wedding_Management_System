@@ -37,16 +37,31 @@ export const getSessionProfile = cache(async function getSessionProfile(): Promi
     return data as Profile;
   });
 
-  if (!profile) {
-    return null;
-  }
-
-  let resolvedRole = (profile?.role as UserRole) || "client";
+  let resolvedRole: UserRole = "client";
   if (user.email === "admin@vivona.demo") {
     resolvedRole = "admin";
   } else if (user.email?.startsWith("planner") || user.email?.includes("planner")) {
     resolvedRole = "employee";
+  } else if (profile?.role) {
+    resolvedRole = profile.role as UserRole;
   }
+
+  const safeProfile: Profile = profile || {
+    id: user.id,
+    role: resolvedRole,
+    full_name:
+      user.email === "admin@vivona.demo"
+        ? "Devraj Rathore"
+        : user.email?.startsWith("planner")
+        ? "Ananya Sharma"
+        : user.email?.split("@")[0] || "Client",
+    phone: "",
+    hourly_rate_paise: 100000,
+    is_active: true,
+    avatar_url: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
 
   return {
     user: {
@@ -54,7 +69,7 @@ export const getSessionProfile = cache(async function getSessionProfile(): Promi
       email: user.email,
     },
     profile: {
-      ...profile,
+      ...safeProfile,
       role: resolvedRole,
     },
   };

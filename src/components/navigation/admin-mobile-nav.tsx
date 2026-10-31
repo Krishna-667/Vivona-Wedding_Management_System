@@ -24,6 +24,14 @@ const ADMIN_NAV: AdminNavItem[] = [
   { label: "Site Content CMS", href: "/admin/content", icon: "🎨" },
 ];
 
+function useSafePathname() {
+  try {
+    return usePathname() || "";
+  } catch {
+    return "";
+  }
+}
+
 export function AdminMobileNav({
   userName,
   userRole,
@@ -32,7 +40,7 @@ export function AdminMobileNav({
   userRole: string;
 }) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const pathname = usePathname();
+  const pathname = useSafePathname();
 
   // Close when pathname changes
   React.useEffect(() => {
