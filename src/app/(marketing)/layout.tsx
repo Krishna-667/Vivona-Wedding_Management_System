@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/logo";
 import { BRAND } from "@/lib/brand";
+import { MarketingMobileNav } from "@/components/navigation/marketing-mobile-nav";
 
 export default function MarketingLayout({
   children,
@@ -8,34 +9,40 @@ export default function MarketingLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background overflow-x-hidden">
       {/* Top Header */}
       <header className="sticky top-0 z-40 w-full border-b border-border/70 bg-background/90 backdrop-blur-md">
-        <div className="container flex h-20 items-center justify-between">
-          <Logo size="md" showTagline />
+        <div className="container flex h-20 items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-2">
+            <Logo size="md" showTagline />
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-charcoal/80">
             <Link
               href="/"
+              prefetch={true}
               className="hover:text-maroon transition-colors"
             >
               Overview
             </Link>
             <Link
               href="/packages"
+              prefetch={true}
               className="hover:text-maroon transition-colors"
             >
               Packages
             </Link>
             <Link
               href="/social-proof"
+              prefetch={true}
               className="hover:text-maroon transition-colors"
             >
               Real Weddings & Citations
             </Link>
             <Link
               href="/about"
+              prefetch={true}
               className="hover:text-maroon transition-colors"
             >
               The Agency
@@ -43,19 +50,23 @@ export default function MarketingLayout({
           </nav>
 
           {/* Action CTAs */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <Link
               href="/login"
-              className="text-sm font-medium text-maroon hover:text-maroon-600 transition-colors px-3 py-2"
+              prefetch={true}
+              className="hidden sm:inline-flex text-sm font-medium text-maroon hover:text-maroon-600 transition-colors px-3 py-2"
             >
               Sign In
             </Link>
             <Link
               href="/book"
-              className="inline-flex items-center justify-center rounded-xl bg-maroon px-5 py-2.5 text-sm font-medium text-ivory hover:bg-maroon-600 transition-colors shadow-sm"
+              prefetch={true}
+              className="inline-flex items-center justify-center rounded-xl bg-maroon px-4 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-medium text-ivory hover:bg-maroon-600 transition-colors shadow-sm"
             >
               Plan Your Wedding
             </Link>
+            {/* Mobile Hamburger Drawer Trigger */}
+            <MarketingMobileNav />
           </div>
         </div>
       </header>

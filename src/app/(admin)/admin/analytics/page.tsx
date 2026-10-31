@@ -1,6 +1,7 @@
 import { getSessionProfile } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { FounderDashboard } from "@/components/features/analytics/founder-dashboard";
+import { fetchWithCache } from "@/lib/cache";
 import type { Wedding } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -10,23 +11,29 @@ export const metadata = {
 };
 
 export default async function AdminAnalyticsPage() {
-  const admin = createAdminClient();
+  const { rawWeddings, allVendors, allCheckins, allTimesheets } = await fetchWithCache(
+    "admin_analytics_raw_data",
+    30000, // 30 seconds cache
+    async () => {
+      const admin = createAdminClient();
+      const [weddingsRes, vendorsRes, checkinsRes, timesheetsRes] = await Promise.all([
+        admin
+          .from("weddings")
+          .select("*, payment_milestones(amount_paise), wedding_vendors(agreed_amount_paise), extra_charges(total_paise, status)")
+          .order("start_date", { ascending: true }),
+        admin.from("vendors").select("id, name, category").eq("is_active", true),
+        admin.from("vendor_checkins").select("*"),
+        admin.from("timesheets").select("wedding_id, hours, hourly_rate_paise"),
+      ]);
 
-  // 1. Fetch all weddings with milestones, vendors, timesheets
-  const [weddingsRes, vendorsRes, checkinsRes, timesheetsRes] = await Promise.all([
-    admin
-      .from("weddings")
-      .select("*, payment_milestones(amount_paise), wedding_vendors(agreed_amount_paise), extra_charges(total_paise, status)")
-      .order("start_date", { ascending: true }),
-    admin.from("vendors").select("id, name, category").eq("is_active", true),
-    admin.from("vendor_checkins").select("*"),
-    admin.from("timesheets").select("wedding_id, hours, hourly_rate_paise"),
-  ]);
-
-  const rawWeddings = weddingsRes.data || [];
-  const allVendors = vendorsRes.data || [];
-  const allCheckins = checkinsRes.data || [];
-  const allTimesheets = timesheetsRes.data || [];
+      return {
+        rawWeddings: weddingsRes.data || [],
+        allVendors: vendorsRes.data || [],
+        allCheckins: checkinsRes.data || [],
+        allTimesheets: timesheetsRes.data || [],
+      };
+    }
+  );
 
   // 2. Compute financial metrics per wedding
   let totalSeasonRevenuePaise = 0;

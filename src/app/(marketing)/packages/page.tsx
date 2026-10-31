@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatPaise } from "@/lib/utils";
 import { GoldKnotIcon } from "@/components/ui/logo";
+import { fetchWithCache } from "@/lib/cache";
 import type { Package } from "@/types/database";
 
 export const metadata = {
@@ -50,18 +51,20 @@ const DEFAULT_PACKAGES: Partial<Package>[] = [
 ];
 
 async function getPackages(): Promise<Partial<Package>[]> {
-  try {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from("packages")
-      .select("*")
-      .eq("is_active", true)
-      .order("display_order", { ascending: true });
-    if (data && data.length > 0) return data;
-  } catch {
-    // Fall back to defaults
-  }
-  return DEFAULT_PACKAGES;
+  return fetchWithCache("packages_page_data_cache", 300000, async () => {
+    try {
+      const admin = createAdminClient();
+      const { data } = await admin
+        .from("packages")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+      if (data && data.length > 0) return data;
+    } catch {
+      // Fall back to defaults
+    }
+    return DEFAULT_PACKAGES;
+  });
 }
 
 export default async function PackagesPage() {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DEMO_SOCIAL_PROOF } from "@/lib/constants/demo-data";
+import { fetchWithCache } from "@/lib/cache";
 import type { SocialProof } from "@/types/database";
 import { GoldKnotIcon } from "@/components/ui/logo";
 
@@ -13,21 +14,23 @@ export const metadata = {
 export const revalidate = 60;
 
 async function getSocialProof(): Promise<SocialProof[]> {
-  try {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from("social_proof")
-      .select("*")
-      .order("display_order", { ascending: true });
-    if (data && data.length > 0) return data as SocialProof[];
-  } catch {
-    // Fall back to seed citations
-  }
-  return DEMO_SOCIAL_PROOF.map((item, idx) => ({
-    id: `sp-${idx + 1}`,
-    ...item,
-    rating: item.rating ?? 5,
-  })) as SocialProof[];
+  return fetchWithCache("social_proof_page_data_cache", 300000, async () => {
+    try {
+      const admin = createAdminClient();
+      const { data } = await admin
+        .from("social_proof")
+        .select("*")
+        .order("display_order", { ascending: true });
+      if (data && data.length > 0) return data as SocialProof[];
+    } catch {
+      // Fall back to seed citations
+    }
+    return DEMO_SOCIAL_PROOF.map((item, idx) => ({
+      id: `sp-${idx + 1}`,
+      ...item,
+      rating: item.rating ?? 5,
+    })) as SocialProof[];
+  });
 }
 
 export default async function SocialProofPage() {

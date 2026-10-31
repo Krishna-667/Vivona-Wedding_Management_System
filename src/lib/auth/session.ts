@@ -1,4 +1,6 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { fetchWithCache } from "@/lib/cache";
 import type { Profile, UserRole } from "@/types/database";
 
 export interface SessionProfileResult {
@@ -9,7 +11,7 @@ export interface SessionProfileResult {
   profile: Profile;
 }
 
-export async function getSessionProfile(): Promise<SessionProfileResult | null> {
+export const getSessionProfile = cache(async function getSessionProfile(): Promise<SessionProfileResult | null> {
   const supabase = createClient();
 
   const {
@@ -21,13 +23,21 @@ export async function getSessionProfile(): Promise<SessionProfileResult | null> 
     return null;
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+  // Cache user profile lookup in memory for 60 seconds to avoid repeated remote DB roundtrips
+  const profile = await fetchWithCache(`user_profile_${user.id}`, 60000, async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
 
-  if (profileError || !profile) {
+    if (error || !data) {
+      return null;
+    }
+    return data as Profile;
+  });
+
+  if (!profile) {
     return null;
   }
 
@@ -44,11 +54,11 @@ export async function getSessionProfile(): Promise<SessionProfileResult | null> 
       email: user.email,
     },
     profile: {
-      ...(profile as Profile),
+      ...profile,
       role: resolvedRole,
     },
   };
-}
+});
 
 export function getRoleDashboardPath(role: UserRole): string {
   switch (role) {

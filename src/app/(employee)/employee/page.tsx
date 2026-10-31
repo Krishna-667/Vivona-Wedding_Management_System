@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchWithCache } from "@/lib/cache";
 import type { Wedding } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -11,29 +12,32 @@ export const metadata = {
 
 export default async function EmployeeDashboardPage() {
   const session = await getSessionProfile();
-  const admin = createAdminClient();
 
   let weddings: any[] = [];
 
   if (session?.profile.role === "admin") {
-    // Admin sees all weddings
-    const { data } = await admin
-      .from("weddings")
-      .select("*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status)")
-      .order("start_date", { ascending: true })
-      .limit(10);
-    weddings = data || [];
+    weddings = await fetchWithCache("employee_dash_admin_weddings", 30000, async () => {
+      const admin = createAdminClient();
+      const { data } = await admin
+        .from("weddings")
+        .select("*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status)")
+        .order("start_date", { ascending: true })
+        .limit(10);
+      return data || [];
+    });
   } else if (session) {
-    // Employee sees only assigned weddings
-    const { data: assignments } = await admin
-      .from("wedding_assignments")
-      .select("wedding_id, role_on_wedding, weddings(*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status))")
-      .eq("employee_id", session.user.id);
+    weddings = await fetchWithCache(`employee_dash_weddings_${session.user.id}`, 30000, async () => {
+      const admin = createAdminClient();
+      const { data: assignments } = await admin
+        .from("wedding_assignments")
+        .select("wedding_id, role_on_wedding, weddings(*, tasks(id, stage), incidents(id, status), payment_milestones(id, title, status))")
+        .eq("employee_id", session.user.id);
 
-    weddings = (assignments || []).map((a) => ({
-      ...a.weddings,
-      role_on_wedding: a.role_on_wedding,
-    }));
+      return (assignments || []).map((a) => ({
+        ...a.weddings,
+        role_on_wedding: a.role_on_wedding,
+      }));
+    });
   }
 
   return (

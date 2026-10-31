@@ -2,6 +2,25 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { UserRole } from "@/types/database";
 
+interface CachedAuthSession {
+  userId: string;
+  email?: string;
+  role: UserRole;
+  isActive: boolean;
+  expiresAt: number;
+}
+
+const middlewareSessionCache = new Map<string, CachedAuthSession>();
+
+function getSessionTokenKey(request: NextRequest): string | null {
+  const allCookies = request.cookies.getAll();
+  const authCookie = allCookies.find(
+    (c) => c.name.includes("auth-token") || c.name.startsWith("sb-")
+  );
+  if (!authCookie || !authCookie.value) return null;
+  return `${authCookie.name}:${authCookie.value.slice(0, 64)}`;
+}
+
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
@@ -39,7 +58,46 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4. Authenticated context: Initialize Supabase SSR only when auth cookie exists
+  // Fast-Path: In-memory session verification cache (eliminates 1000ms remote network roundtrips on every click)
+  const sessionKey = getSessionTokenKey(request);
+  if (sessionKey) {
+    const cached = middlewareSessionCache.get(sessionKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      const { role, isActive } = cached;
+
+      if (!isActive) {
+        const redirectUrl = request.nextUrl.clone();
+        redirectUrl.pathname = "/login";
+        redirectUrl.searchParams.set("error", "account_suspended");
+        return NextResponse.redirect(redirectUrl);
+      }
+
+      if (isAuthPage) {
+        const redirectUrl = request.nextUrl.clone();
+        if (role === "admin") redirectUrl.pathname = "/admin";
+        else if (role === "employee") redirectUrl.pathname = "/employee";
+        else redirectUrl.pathname = "/client";
+        return NextResponse.redirect(redirectUrl);
+      }
+
+      if (isProtectedAdmin && role !== "admin") {
+        const redirectUrl = request.nextUrl.clone();
+        redirectUrl.pathname = role === "employee" ? "/employee" : "/client";
+        return NextResponse.redirect(redirectUrl);
+      }
+
+      if (isProtectedEmployee && role === "client") {
+        const redirectUrl = request.nextUrl.clone();
+        redirectUrl.pathname = "/client";
+        return NextResponse.redirect(redirectUrl);
+      }
+
+      // Fast-pass authorized request in 0ms
+      return NextResponse.next();
+    }
+  }
+
+  // 4. Authenticated context: Initialize Supabase SSR only when cache miss occurs
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -74,6 +132,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user && (isProtectedAdmin || isProtectedEmployee || isProtectedClient)) {
+    if (sessionKey) middlewareSessionCache.delete(sessionKey);
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("redirectTo", path);
@@ -96,6 +155,17 @@ export async function middleware(request: NextRequest) {
       role = "employee";
     }
     const isActive = profile?.is_active ?? true;
+
+    // Cache verified session for 60 seconds
+    if (sessionKey) {
+      middlewareSessionCache.set(sessionKey, {
+        userId: user.id,
+        email: user.email,
+        role,
+        isActive,
+        expiresAt: Date.now() + 60000,
+      });
+    }
 
     if (!isActive) {
       const redirectUrl = request.nextUrl.clone();

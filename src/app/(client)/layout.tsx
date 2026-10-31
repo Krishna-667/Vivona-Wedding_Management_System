@@ -15,48 +15,40 @@ export default async function ClientLayout({
     redirect("/login?redirectTo=/client");
   }
 
+  const clientNav = [
+    { label: "Overview", href: "/client", icon: "🏰" },
+    { label: "Requests", href: "/client/requests", icon: "📝" },
+    { label: "Agreement", href: "/client/agreement", icon: "✍️" },
+    { label: "Messages", href: "/client/messages", icon: "💬" },
+  ];
+
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background pb-20 md:pb-0 overflow-x-hidden">
       {/* Client Portal Header */}
       <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/95 backdrop-blur-md">
-        <div className="container flex h-18 items-center justify-between py-3">
-          <div className="flex items-center gap-6">
+        <div className="container flex h-16 sm:h-18 items-center justify-between py-2 sm:py-3 px-4 sm:px-6">
+          <div className="flex items-center gap-3 sm:gap-6">
             <Logo size="sm" href="/client" />
             <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gold-400/20 text-charcoal border border-gold-400/40">
               Client Portal
             </span>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="flex items-center gap-1 sm:gap-6 text-xs sm:text-sm font-medium text-charcoal/80">
-            <Link
-              href="/client"
-              className="px-2.5 py-1.5 rounded-lg hover:text-maroon hover:bg-ivory-300/40 transition-colors"
-            >
-              Overview
-            </Link>
-            <Link
-              href="/client/requests"
-              className="px-2.5 py-1.5 rounded-lg hover:text-maroon hover:bg-ivory-300/40 transition-colors"
-            >
-              My Requests
-            </Link>
-            <Link
-              href="/client/agreement"
-              className="px-2.5 py-1.5 rounded-lg hover:text-maroon hover:bg-ivory-300/40 transition-colors"
-            >
-              Agreement & E-Sign
-            </Link>
-            <Link
-              href="/client/messages"
-              className="px-2.5 py-1.5 rounded-lg hover:text-maroon hover:bg-ivory-300/40 transition-colors"
-            >
-              Messages
-            </Link>
+          {/* Desktop Navigation Links */}
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-charcoal/80">
+            {clientNav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="px-2.5 py-1.5 rounded-lg hover:text-maroon hover:bg-ivory-300/40 transition-colors"
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
 
           {/* Profile & Sign Out */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden md:block text-right">
               <p className="text-xs font-semibold text-charcoal">{session.profile.full_name}</p>
               <p className="text-[10px] text-charcoal/60">{session.user.email}</p>
@@ -64,7 +56,7 @@ export default async function ClientLayout({
             <form action={signOutAction}>
               <button
                 type="submit"
-                className="text-xs text-charcoal/70 hover:text-maroon font-medium px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-ivory-300/50 transition-colors"
+                className="text-xs text-charcoal/70 hover:text-maroon font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-ivory-300/50 transition-colors"
               >
                 Sign Out
               </button>
@@ -74,9 +66,23 @@ export default async function ClientLayout({
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 container py-8">{children}</main>
+      <main className="flex-1 container py-6 sm:py-8 px-4 sm:px-6">{children}</main>
 
-      <footer className="border-t border-border/60 py-6 text-center text-xs text-charcoal/50">
+      {/* Mobile Sticky Bottom Nav Bar (390px Native App Experience) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 border-t border-border/80 flex items-center justify-around py-2 px-1 backdrop-blur-md">
+        {clientNav.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex flex-col items-center gap-0.5 py-1 px-3 text-[10px] font-medium text-charcoal/75 hover:text-maroon active:scale-95 transition-all"
+          >
+            <span className="text-base">{item.icon}</span>
+            <span>{item.label}</span>
+          </Link>
+        ))}
+      </nav>
+
+      <footer className="hidden md:block border-t border-border/60 py-6 text-center text-xs text-charcoal/50">
         Vivona Wedding Planning · Client Concierge Desk
       </footer>
     </div>

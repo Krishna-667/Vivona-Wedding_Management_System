@@ -50,12 +50,20 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
     min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Eliminate 300ms mobile tap delay and optimize touch responsiveness */
+  button, a, input, select, textarea {
+    touch-action: manipulation;
   }
 
   /* Accessible focus states */

@@ -23,7 +23,7 @@ export default async function EmployeeLayout({
   ];
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground pb-20 md:pb-0">
+    <div className="flex min-h-screen bg-background text-foreground pb-20 md:pb-0 overflow-x-hidden">
       {/* Desktop Left Sidebar */}
       <aside className="hidden md:flex w-64 flex-col justify-between border-r border-border/80 bg-card p-6">
         <div className="space-y-8">

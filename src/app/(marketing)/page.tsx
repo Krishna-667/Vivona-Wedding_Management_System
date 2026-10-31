@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { formatPaise } from "@/lib/utils";
 import { GoldKnotIcon } from "@/components/ui/logo";
 import { BRAND } from "@/lib/brand";
+import { fetchWithCache } from "@/lib/cache";
 import type { Package, SocialProof } from "@/types/database";
 
 export const metadata = {
@@ -82,23 +83,25 @@ const DEFAULT_PROOF = [
 ];
 
 async function getHomeData() {
-  try {
-    const admin = createAdminClient();
-    const [pkgRes, spRes] = await Promise.all([
-      admin.from("packages").select("*").eq("is_active", true).order("display_order", { ascending: true }),
-      admin.from("social_proof").select("*").eq("featured", true).order("display_order", { ascending: true }).limit(3),
-    ]);
+  return fetchWithCache("home_page_data_cache", 300000, async () => {
+    try {
+      const admin = createAdminClient();
+      const [pkgRes, spRes] = await Promise.all([
+        admin.from("packages").select("*").eq("is_active", true).order("display_order", { ascending: true }),
+        admin.from("social_proof").select("*").eq("featured", true).order("display_order", { ascending: true }).limit(3),
+      ]);
 
-    return {
-      packages: (pkgRes.data && pkgRes.data.length > 0) ? pkgRes.data : DEFAULT_PACKAGES,
-      socialProof: (spRes.data && spRes.data.length > 0) ? spRes.data : DEFAULT_PROOF,
-    };
-  } catch {
-    return {
-      packages: DEFAULT_PACKAGES,
-      socialProof: DEFAULT_PROOF,
-    };
-  }
+      return {
+        packages: (pkgRes.data && pkgRes.data.length > 0) ? pkgRes.data : DEFAULT_PACKAGES,
+        socialProof: (spRes.data && spRes.data.length > 0) ? spRes.data : DEFAULT_PROOF,
+      };
+    } catch {
+      return {
+        packages: DEFAULT_PACKAGES,
+        socialProof: DEFAULT_PROOF,
+      };
+    }
+  });
 }
 
 export default async function HomePage() {
@@ -110,10 +113,10 @@ export default async function HomePage() {
       <section className="relative overflow-hidden rounded-3xl border border-gold-400/30 shadow-xl mx-auto max-w-7xl">
         {/* Background Image with Opacity & Gradient Overlay */}
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-700"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: `url('/images/hero-wedding-stage.jpg')` }}
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#FBF7F0]/85 via-[#FBF7F0]/80 to-[#FBF7F0]/95 backdrop-blur-[1.5px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#FBF7F0]/90 via-[#FBF7F0]/85 to-[#FBF7F0]/95" />
 
         {/* Content Container */}
         <div className="relative z-10 container text-center space-y-7 py-20 sm:py-28 md:py-32 max-w-4xl px-4 sm:px-8">
@@ -137,13 +140,15 @@ export default async function HomePage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
             <Link
               href="/book"
+              prefetch={true}
               className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-maroon px-8 py-3.5 text-base font-semibold text-ivory hover:bg-maroon-600 transition-all shadow-md hover:shadow-lg"
             >
               Start Your Wedding Plan
             </Link>
             <Link
               href="/login"
-              className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-charcoal/20 bg-card/90 backdrop-blur-xs px-8 py-3.5 text-base font-semibold text-charcoal hover:bg-card transition-all shadow-sm"
+              prefetch={true}
+              className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-charcoal/20 bg-card px-8 py-3.5 text-base font-semibold text-charcoal hover:bg-card/90 transition-all shadow-sm"
             >
               Enter Role Portal
             </Link>

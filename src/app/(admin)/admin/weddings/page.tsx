@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatPaise } from "@/lib/utils";
+import { fetchWithCache } from "@/lib/cache";
 import type { Wedding } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -10,19 +11,20 @@ export const metadata = {
 };
 
 export default async function AdminWeddingsPage() {
-  const admin = createAdminClient();
+  const weddingList = await fetchWithCache("admin_weddings_list", 30000, async () => {
+    const admin = createAdminClient();
+    const { data: weddings } = await admin
+      .from("weddings")
+      .select("*, profiles!weddings_client_id_fkey(full_name, phone), wedding_assignments(employee_id, role_on_wedding, profiles(full_name))")
+      .order("start_date", { ascending: true });
 
-  const { data: weddings } = await admin
-    .from("weddings")
-    .select("*, profiles!weddings_client_id_fkey(full_name, phone), wedding_assignments(employee_id, role_on_wedding, profiles(full_name))")
-    .order("start_date", { ascending: true });
-
-  const weddingList = (weddings || []) as Array<
-    Wedding & {
-      profiles?: { full_name: string; phone: string } | null;
-      wedding_assignments?: Array<{ employee_id: string; role_on_wedding: string; profiles?: { full_name: string } | null }>;
-    }
-  >;
+    return (weddings || []) as Array<
+      Wedding & {
+        profiles?: { full_name: string; phone: string } | null;
+        wedding_assignments?: Array<{ employee_id: string; role_on_wedding: string; profiles?: { full_name: string } | null }>;
+      }
+    >;
+  });
 
   return (
     <div className="space-y-8 max-w-6xl">
