@@ -30,20 +30,13 @@ function LoginForm() {
     }
   }, [searchParams]);
 
-  const handleQuickFill = (targetEmail: string) => {
-    setEmail(targetEmail);
-    setPassword("ChangeMe-Demo#2026");
-    setErrorMsg(null);
-  };
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const executeLogin = async (loginEmail: string, loginPass: string) => {
     setLoading(true);
     setErrorMsg(null);
 
     const formData = new FormData();
-    formData.append("email", email);
-    formData.append("password", password);
+    formData.append("email", loginEmail);
+    formData.append("password", loginPass);
 
     try {
       const res = await signInAction(formData);
@@ -54,7 +47,7 @@ function LoginForm() {
         return;
       }
 
-      toast.success(`Welcome back. Redirecting to ${res.data.role} portal...`);
+      toast.success(`Welcome back! Redirecting to ${res.data.role} portal...`);
       router.push(res.data.redirectTo);
       router.refresh();
     } catch {
@@ -62,6 +55,17 @@ function LoginForm() {
       toast.error("Failed to authenticate.");
       setLoading(false);
     }
+  };
+
+  const handleQuickLogin = (targetEmail: string) => {
+    setEmail(targetEmail);
+    setPassword("ChangeMe-Demo#2026");
+    executeLogin(targetEmail, "ChangeMe-Demo#2026");
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    await executeLogin(email, password);
   };
 
   return (
@@ -81,22 +85,25 @@ function LoginForm() {
         <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
-            onClick={() => handleQuickFill("admin@vivona.demo")}
-            className="px-2 py-1.5 rounded-lg border border-maroon/30 bg-card text-xs font-medium text-maroon hover:bg-maroon hover:text-ivory transition-colors text-center"
+            disabled={loading}
+            onClick={() => handleQuickLogin("admin@vivona.demo")}
+            className="px-2 py-1.5 rounded-lg border border-maroon/30 bg-card text-xs font-medium text-maroon hover:bg-maroon hover:text-ivory transition-colors text-center disabled:opacity-50"
           >
             Founder (Admin)
           </button>
           <button
             type="button"
-            onClick={() => handleQuickFill("planner1@vivona.demo")}
-            className="px-2 py-1.5 rounded-lg border border-sage-500/40 bg-card text-xs font-medium text-sage-600 hover:bg-sage-500 hover:text-white transition-colors text-center"
+            disabled={loading}
+            onClick={() => handleQuickLogin("planner1@vivona.demo")}
+            className="px-2 py-1.5 rounded-lg border border-sage-500/40 bg-card text-xs font-medium text-sage-600 hover:bg-sage-500 hover:text-white transition-colors text-center disabled:opacity-50"
           >
             Lead Planner
           </button>
           <button
             type="button"
-            onClick={() => handleQuickFill("couple1@vivona.demo")}
-            className="px-2 py-1.5 rounded-lg border border-gold-400/40 bg-card text-xs font-medium text-gold-600 hover:bg-gold-500 hover:text-white transition-colors text-center"
+            disabled={loading}
+            onClick={() => handleQuickLogin("couple1@vivona.demo")}
+            className="px-2 py-1.5 rounded-lg border border-gold-400/40 bg-card text-xs font-medium text-gold-600 hover:bg-gold-500 hover:text-white transition-colors text-center disabled:opacity-50"
           >
             Client Couple
           </button>
