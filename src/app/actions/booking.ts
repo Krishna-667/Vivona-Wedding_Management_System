@@ -4,6 +4,11 @@ import { FullBookingSubmissionSchema, type FullBookingSubmission } from "@/lib/v
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSessionProfile } from "@/lib/auth/session";
+import { sendEmail } from "@/lib/email/resend";
+import {
+  renderEnquiryConfirmationEmail,
+  renderAdminEnquiryAlertEmail,
+} from "@/lib/email/templates";
 
 export interface BookingActionResult {
   ok: boolean;
@@ -224,6 +229,46 @@ export async function createEnquiryAction(payload: unknown): Promise<BookingActi
     }));
     await adminClient.from("notifications").insert(adminNotifications);
   }
+
+  // 9. Resend Email Dispatch (Dual-Write resilience)
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
+  // Dispatch Confirmation to Client
+  const clientEmailData = renderEnquiryConfirmationEmail({
+    clientName: data.contactName,
+    enquiryCode: insertedEnquiry.code,
+    weddingType: data.type,
+    guestCount: data.guestCount,
+    city: data.city,
+    portalUrl: `${siteUrl}/client`,
+  });
+
+  await sendEmail({
+    to: data.contactEmail,
+    subject: clientEmailData.subject,
+    html: clientEmailData.html,
+    text: clientEmailData.text,
+  });
+
+  // Dispatch Alert to Admin
+  const adminEmail = process.env.ADMIN_ALERT_EMAIL || "admin@vivona.demo";
+  const adminEmailData = renderAdminEnquiryAlertEmail({
+    clientName: data.contactName,
+    clientEmail: data.contactEmail,
+    clientPhone: data.contactPhone,
+    enquiryCode: insertedEnquiry.code,
+    city: data.city,
+    guestCount: data.guestCount,
+    type: data.type,
+    adminUrl: `${siteUrl}/admin/enquiries`,
+  });
+
+  await sendEmail({
+    to: adminEmail,
+    subject: adminEmailData.subject,
+    html: adminEmailData.html,
+    text: adminEmailData.text,
+  });
 
   return {
     ok: true,
