@@ -7,6 +7,30 @@ declare global {
   var _serviceSqlPool: postgres.Sql | undefined;
 }
 
+const customTypes = {
+  date: {
+    to: 1082,
+    from: [1082],
+    serialize: (x: any) =>
+      x == null ? null : x instanceof Date ? x.toISOString().slice(0, 10) : String(x),
+    parse: (x: any) => (x ? String(x) : x),
+  },
+  timestamp: {
+    to: 1114,
+    from: [1114],
+    serialize: (x: any) =>
+      x == null ? null : x instanceof Date ? x.toISOString() : String(x),
+    parse: (x: any) => (x ? String(x) : x),
+  },
+  timestamptz: {
+    to: 1184,
+    from: [1184],
+    serialize: (x: any) =>
+      x == null ? null : x instanceof Date ? x.toISOString() : String(x),
+    parse: (x: any) => (x ? String(x) : x),
+  },
+};
+
 function createClient(
   envUrl: string | undefined,
   defaultUser: string,
@@ -25,6 +49,7 @@ function createClient(
         max: maxConns,
         idle_timeout: 20,
         connect_timeout: 5,
+        types: customTypes,
       });
     } catch {
       // Fallback below
@@ -40,6 +65,7 @@ function createClient(
     max: maxConns,
     idle_timeout: 20,
     connect_timeout: 5,
+    types: customTypes,
   });
 }
 
