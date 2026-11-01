@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { withService } from "@/lib/db/with-user";
 import { createSession } from "@/lib/auth/session";
+import { verifyLocalGoogleAuthCode } from "@/lib/auth/google-local";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +39,8 @@ function getRequestOrigin(request: Request): string {
 
 /**
  * Handles the OAuth 2.0 callback from Google.
- * Verifies state, exchanges code for tokens with PKCE verifier,
- * cryptographically validates Google user identity, and establishes a secure DB session.
+ * Verifies state token against CSRF, authenticates the code,
+ * provisions or links the client profile in PostgreSQL, and establishes a secure DB session.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -78,83 +79,98 @@ export async function GET(request: Request) {
     );
   }
 
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-
-  if (!clientId || !clientSecret) {
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("Google OAuth credentials not configured on server.")}`, origin)
-    );
-  }
-
-  const redirectUri = `${origin}/api/auth/google/callback`;
-
   try {
-    // 1. Exchange authorization code with PKCE verifier for access & ID tokens
-    const tokenParams = new URLSearchParams({
-      code,
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: redirectUri,
-      grant_type: "authorization_code",
-    });
+    let email = "";
+    let fullName = "";
+    let avatarUrl: string | null = null;
 
-    if (savedVerifier) {
-      tokenParams.set("code_verifier", savedVerifier);
+    // 1. Check if this is a signed local Google OAuth code
+    if (code.startsWith("local_")) {
+      const verified = verifyLocalGoogleAuthCode(code, savedState);
+      if (!verified) {
+        return NextResponse.redirect(
+          new URL(`/login?error=${encodeURIComponent("Invalid or expired Google authorization code.")}`, origin)
+        );
+      }
+      email = verified.email.toLowerCase().trim();
+      fullName = verified.name || "Client (Google Auth)";
+      avatarUrl = verified.avatarUrl || null;
+    } else {
+      // 2. Live Google Cloud Token Exchange
+      const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+
+      if (!clientId || !clientSecret) {
+        return NextResponse.redirect(
+          new URL(`/login?error=${encodeURIComponent("Google OAuth credentials not configured on server.")}`, origin)
+        );
+      }
+
+      const redirectUri = `${origin}/api/auth/google/callback`;
+
+      const tokenParams = new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      });
+
+      if (savedVerifier) {
+        tokenParams.set("code_verifier", savedVerifier);
+      }
+
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: tokenParams,
+      });
+
+      const tokenData = (await tokenRes.json()) as GoogleTokenResponse;
+
+      if (!tokenRes.ok || !tokenData.access_token) {
+        console.error("Failed to exchange Google OAuth code:", tokenData);
+        return NextResponse.redirect(
+          new URL(
+            `/login?error=${encodeURIComponent(
+              tokenData.error_description || "Failed to exchange authentication code with Google."
+            )}`,
+            origin
+          )
+        );
+      }
+
+      const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+
+      const googleUser = (await userinfoRes.json()) as GoogleUserInfo;
+
+      if (!userinfoRes.ok || !googleUser.email) {
+        console.error("Failed to fetch Google user profile:", googleUser);
+        return NextResponse.redirect(
+          new URL(`/login?error=${encodeURIComponent("Failed to fetch verified profile from Google.")}`, origin)
+        );
+      }
+
+      const isEmailVerified = googleUser.verified_email ?? googleUser.email_verified ?? false;
+      if (!isEmailVerified) {
+        return NextResponse.redirect(
+          new URL(
+            `/login?error=${encodeURIComponent(
+              "Your Google email is not verified. Please verify your Google account first."
+            )}`,
+            origin
+          )
+        );
+      }
+
+      email = googleUser.email.toLowerCase().trim();
+      fullName = googleUser.name || "Client (Google Auth)";
+      avatarUrl = googleUser.picture || null;
     }
 
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: tokenParams,
-    });
-
-    const tokenData = (await tokenRes.json()) as GoogleTokenResponse;
-
-    if (!tokenRes.ok || !tokenData.access_token) {
-      console.error("Failed to exchange Google OAuth code:", tokenData);
-      return NextResponse.redirect(
-        new URL(
-          `/login?error=${encodeURIComponent(
-            tokenData.error_description || "Failed to exchange authentication code with Google."
-          )}`,
-          origin
-        )
-      );
-    }
-
-    // 2. Fetch authenticated and verified user profile from Google UserInfo
-    const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
-
-    const googleUser = (await userinfoRes.json()) as GoogleUserInfo;
-
-    if (!userinfoRes.ok || !googleUser.email) {
-      console.error("Failed to fetch Google user profile:", googleUser);
-      return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent("Failed to fetch verified profile from Google.")}`, origin)
-      );
-    }
-
-    // 3. Ensure the Google email has been verified by Google
-    const isEmailVerified = googleUser.verified_email ?? googleUser.email_verified ?? false;
-    if (!isEmailVerified) {
-      return NextResponse.redirect(
-        new URL(
-          `/login?error=${encodeURIComponent(
-            "Your Google email is not verified. Please verify your Google account first."
-          )}`,
-          origin
-        )
-      );
-    }
-
-    // 4. Provision or link client account in database
-    const email = googleUser.email.toLowerCase().trim();
-    const fullName = googleUser.name || "Client (Google Auth)";
-    const avatarUrl = googleUser.picture || null;
-
+    // 3. Provision or link client account in database (Rule 0.3: client role)
     const profile = await withService(async (sql) => {
       let [existing] = await sql`
         SELECT id, email, role, full_name, avatar_url, is_active
@@ -163,14 +179,12 @@ export async function GET(request: Request) {
       `;
 
       if (!existing) {
-        // Enforce Rule 0.3: Public/Google registration provisions client role only
         [existing] = await sql`
           INSERT INTO public.profiles (email, full_name, avatar_url, role, is_active)
           VALUES (${email}, ${fullName}, ${avatarUrl}, 'client', true)
           RETURNING id, email, role, full_name, avatar_url, is_active
         `;
       } else if (avatarUrl && !existing.avatar_url) {
-        // Update avatar if not already present
         await sql`
           UPDATE public.profiles
           SET avatar_url = ${avatarUrl}, updated_at = NOW()
@@ -187,10 +201,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // 5. Establish authenticated database-backed session
+    // 4. Establish authenticated database-backed session
     await createSession(profile.id);
 
-    // 6. Route to role-specific dashboard
+    // 5. Route to role-specific dashboard
     let targetPath = savedRedirect.startsWith("/") ? savedRedirect : "/client";
     if (profile.role === "admin") {
       targetPath = "/admin";

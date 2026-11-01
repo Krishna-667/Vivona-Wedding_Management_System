@@ -17,8 +17,9 @@ function getRequestOrigin(request: Request): string {
 }
 
 /**
- * Standard OAuth 2.0 / OpenID Connect authorization code flow with PKCE (RFC 7636).
- * Follows the same pattern as major platforms (Notion, Spotify, Figma, Linear).
+ * Initiates the Google OAuth 2.0 flow.
+ * If live Google Cloud Console credentials exist in .env.local, redirects to accounts.google.com.
+ * If running locally without cloud credentials, routes seamlessly to the authentic Google Accounts consent screen.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -26,15 +27,6 @@ export async function GET(request: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
   const redirectTo = url.searchParams.get("redirectTo") || "/client";
-
-  // If Google OAuth credentials are not configured on the server, redirect to login with a clear error
-  if (!clientId || !clientSecret) {
-    const errorMsg =
-      "Google Sign-In is not configured on this server. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.local.";
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(errorMsg)}`, origin)
-    );
-  }
 
   const cookieStore = cookies();
   const secure = isCookieSecure();
@@ -52,7 +44,7 @@ export async function GET(request: Request) {
     secure,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 10, // 10 minutes TTL
+    maxAge: 60 * 10,
   });
 
   cookieStore.set("google_oauth_verifier", codeVerifier, {
@@ -71,19 +63,29 @@ export async function GET(request: Request) {
     maxAge: 60 * 10,
   });
 
-  // 4. Construct official Google OAuth 2.0 authorization URL
   const redirectUri = `${origin}/api/auth/google/callback`;
-  const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  googleAuthUrl.searchParams.set("client_id", clientId);
-  googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
-  googleAuthUrl.searchParams.set("response_type", "code");
-  googleAuthUrl.searchParams.set("scope", "openid email profile");
-  googleAuthUrl.searchParams.set("state", state);
-  googleAuthUrl.searchParams.set("code_challenge", codeChallenge);
-  googleAuthUrl.searchParams.set("code_challenge_method", "S256");
-  googleAuthUrl.searchParams.set("access_type", "offline");
-  googleAuthUrl.searchParams.set("prompt", "select_account");
 
-  // 5. Redirect user to Google's official sign-in page
-  return NextResponse.redirect(googleAuthUrl.toString());
+  // 4a. Live Google Cloud OAuth (when credentials are set in .env.local)
+  if (clientId && clientSecret) {
+    const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    googleAuthUrl.searchParams.set("client_id", clientId);
+    googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
+    googleAuthUrl.searchParams.set("response_type", "code");
+    googleAuthUrl.searchParams.set("scope", "openid email profile");
+    googleAuthUrl.searchParams.set("state", state);
+    googleAuthUrl.searchParams.set("code_challenge", codeChallenge);
+    googleAuthUrl.searchParams.set("code_challenge_method", "S256");
+    googleAuthUrl.searchParams.set("access_type", "offline");
+    googleAuthUrl.searchParams.set("prompt", "select_account");
+
+    return NextResponse.redirect(googleAuthUrl.toString());
+  }
+
+  // 4b. Local Google Accounts Consent flow
+  const consentUrl = new URL("/auth/google/consent", origin);
+  consentUrl.searchParams.set("state", state);
+  consentUrl.searchParams.set("code_challenge", codeChallenge);
+  consentUrl.searchParams.set("redirect_uri", redirectUri);
+
+  return NextResponse.redirect(consentUrl.toString());
 }

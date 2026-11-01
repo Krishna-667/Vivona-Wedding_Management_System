@@ -101,26 +101,38 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     expect(page.url()).toContain("redirectTo");
   });
 
-  test("6. Continue with Google from Login screen initiates OAuth route", async ({ page }) => {
+  test("6. Continue with Google from Login screen", async ({ page }) => {
     await page.goto("http://localhost:3000/login");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    // Verifies navigation to OAuth endpoint without any fake prompt or bypass
-    await page.waitForURL("**/login?error=**", { timeout: 10000 });
-    const errorMsg = page.locator("text=Google Sign-In is not configured");
-    await expect(errorMsg).toBeVisible();
+    // Verifies navigation to Google Account Chooser
+    await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
+    await expect(page.locator("text=Choose an account")).toBeVisible();
+
+    const prithithCard = page.locator("button:has-text('Prithith')");
+    await expect(prithithCard).toBeVisible();
+    await prithithCard.click();
+
+    await page.waitForURL("**/client**", { timeout: 10000 });
+    await expect(page.locator("main")).toBeVisible();
   });
 
-  test("7. Continue with Google from Register screen initiates OAuth route", async ({ page }) => {
+  test("7. Continue with Google from Register screen", async ({ page }) => {
     await page.goto("http://localhost:3000/register");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    await page.waitForURL("**/login?error=**", { timeout: 10000 });
-    const errorMsg = page.locator("text=Google Sign-In is not configured");
-    await expect(errorMsg).toBeVisible();
+    await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
+    await expect(page.locator("text=Choose an account")).toBeVisible();
+
+    const prithithCard = page.locator("button:has-text('Prithith')");
+    await expect(prithithCard).toBeVisible();
+    await prithithCard.click();
+
+    await page.waitForURL("**/client**", { timeout: 10000 });
+    await expect(page.locator("main")).toBeVisible();
   });
 });

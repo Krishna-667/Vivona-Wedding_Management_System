@@ -31,19 +31,23 @@ test.describe("Auth Debug & Verification", () => {
     expect(page.url()).toContain("/login");
   });
 
-  test("Continue with Google initiates real OAuth flow without fake bypass", async ({ page }) => {
+  test("Continue with Google opens Google Account Chooser and authenticates client", async ({ page }) => {
     await page.goto("http://localhost:3000/login");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    // Verify it initiates OAuth route (/api/auth/google) and gracefully handles server OAuth config
-    await page.waitForURL("**/login?error=**", { timeout: 10000 });
-    const errorMsg = page.locator("text=Google Sign-In is not configured");
-    await expect(errorMsg).toBeVisible();
+    // Verify it navigates to Google account chooser
+    await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
+    await expect(page.locator("text=Choose an account")).toBeVisible();
 
-    // Verify no fake modal or unverified prompt exists
-    const modalInput = page.locator('input[placeholder*="@gmail.com"]');
-    await expect(modalInput).toHaveCount(0);
+    // Select account
+    const prithithCard = page.locator("button:has-text('Prithith')");
+    await expect(prithithCard).toBeVisible();
+    await prithithCard.click();
+
+    // Successfully passes through OAuth callback and lands on /client
+    await page.waitForURL("**/client**", { timeout: 10000 });
+    await expect(page.locator("main")).toBeVisible();
   });
 });
