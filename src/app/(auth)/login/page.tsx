@@ -208,7 +208,6 @@ function LoginForm() {
           <input
             ref={passwordRef}
             type="password"
-            name="password"
             required
             autoComplete="current-password"
             placeholder="••••••••••••"

@@ -182,7 +182,6 @@ export default function RegisterPage() {
           <input
             ref={passwordRef}
             type="password"
-            name="password"
             required
             minLength={8}
             placeholder="••••••••••••"
