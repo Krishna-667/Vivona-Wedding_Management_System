@@ -68,9 +68,10 @@ export async function signInSealedAction(
   try {
     // 1. Unseal and decrypt credentials on server
     const { email, password } = await unsealCredentials(sealed);
+    const cleanEmail = email.toLowerCase().trim();
 
     // 2. Check account lockout (5 failures in 15 min)
-    if (await isAccountLocked(email)) {
+    if (await isAccountLocked(cleanEmail)) {
       return {
         ok: false,
         error: "Account temporarily locked due to multiple failed login attempts. Please try again in 15 minutes.",
@@ -89,23 +90,25 @@ export async function signInSealedAction(
           c.password_hash
         FROM public.profiles p
         LEFT JOIN private.auth_credentials c ON c.profile_id = p.id
-        WHERE p.email = ${email}
+        WHERE LOWER(p.email) = LOWER(${cleanEmail})
       `;
       return row;
     });
 
     // 4. Verify argon2id password
     const isValid = await verifyPassword(password, userRecord?.password_hash);
-    await recordLoginAttempt(email, isValid);
+    await recordLoginAttempt(cleanEmail, isValid);
 
     if (!isValid || !userRecord || !userRecord.is_active) {
+      await destroySession();
       return {
         ok: false,
         error: "Invalid email or password.",
       };
     }
 
-    // 5. Create custom database session and set HTTP-only cookie
+    // 5. Reset previous sessions, create new database session and set HTTP-only cookie
+    await destroySession();
     await createSession(userRecord.id);
 
     const role = userRecord.role as UserRole;
@@ -150,9 +153,10 @@ export async function signInAction(
   }
 
   const { email, password } = parsed.data;
+  const cleanEmail = email.toLowerCase().trim();
 
   // 1. Check account lockout (5 failures in 15 min)
-  if (await isAccountLocked(email)) {
+  if (await isAccountLocked(cleanEmail)) {
     return {
       ok: false,
       error: "Account temporarily locked due to multiple failed login attempts. Please try again in 15 minutes.",
@@ -171,16 +175,17 @@ export async function signInAction(
         c.password_hash
       FROM public.profiles p
       LEFT JOIN private.auth_credentials c ON c.profile_id = p.id
-      WHERE p.email = ${email}
+      WHERE LOWER(p.email) = LOWER(${cleanEmail})
     `;
     return row;
   });
 
   // 3. Verify argon2id password
   const isValid = await verifyPassword(password, userRecord?.password_hash);
-  await recordLoginAttempt(email, isValid);
+  await recordLoginAttempt(cleanEmail, isValid);
 
   if (!isValid || !userRecord || !userRecord.is_active) {
+    await destroySession();
     return {
       ok: false,
       error: "Invalid email or password.",
@@ -188,6 +193,7 @@ export async function signInAction(
   }
 
   // 4. Create custom database session and set HTTP-only cookie
+  await destroySession();
   await createSession(userRecord.id);
 
   const role = userRecord.role as UserRole;
@@ -219,8 +225,23 @@ export async function signUpAction(
   }
 
   const { fullName, email, password, phone } = parsed.data;
+  const cleanEmail = email.toLowerCase().trim();
 
   try {
+    const existing = await withService(async (sql) => {
+      const [row] = await sql`
+        SELECT id FROM public.profiles WHERE LOWER(email) = LOWER(${cleanEmail})
+      `;
+      return row;
+    });
+
+    if (existing) {
+      return {
+        ok: false,
+        error: "An account with this email address already exists. Please sign in instead.",
+      };
+    }
+
     const hashedPassword = await hashPassword(password);
     const encPhone = encryptField("profiles", "phone", phone);
     const phoneBidx = computeBlindIndex(phone);
@@ -229,7 +250,7 @@ export async function signUpAction(
       // 1. Create profile (client role only)
       const [profile] = await sql`
         INSERT INTO public.profiles (full_name, email, role, phone, phone_bidx, is_active)
-        VALUES (${fullName}, ${email}, 'client', ${encPhone}, ${phoneBidx}, true)
+        VALUES (${fullName}, ${cleanEmail}, 'client', ${encPhone}, ${phoneBidx}, true)
         RETURNING id
       `;
 

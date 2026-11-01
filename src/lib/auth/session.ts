@@ -8,6 +8,16 @@ import type { Profile, UserRole } from "@/types/database";
 export const SESSION_COOKIE_NAME = "vivona_session";
 const SESSION_TTL_DAYS = 7;
 
+/**
+ * Determine whether cookies must have the Secure attribute.
+ * Only enforce 'secure: true' if the environment is strictly production over HTTPS,
+ * preventing browsers from dropping session cookies during local HTTP testing.
+ */
+export function isCookieSecure(): boolean {
+  const isHttps = process.env.NEXT_PUBLIC_SITE_URL?.startsWith("https://") ?? false;
+  return process.env.APP_ENV === "production" && isHttps;
+}
+
 export interface SessionProfileResult {
   user: {
     id: string;
@@ -35,7 +45,7 @@ export async function createSession(profileId: string): Promise<string> {
   const cookieStore = cookies();
   cookieStore.set(SESSION_COOKIE_NAME, rawToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isCookieSecure(),
     sameSite: "lax",
     path: "/",
     expires: expiresAt,

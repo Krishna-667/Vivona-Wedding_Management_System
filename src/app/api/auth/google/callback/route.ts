@@ -22,9 +22,20 @@ interface GoogleUserInfo {
   picture?: string;
 }
 
+function getRequestOrigin(request: Request): string {
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  const proto =
+    request.headers.get("x-forwarded-proto") ||
+    (host && !host.includes("localhost") && !host.includes("127.0.0.1") ? "https" : "http");
+  if (host) {
+    return `${proto}://${host}`;
+  }
+  return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || `${url.protocol}//${url.host}`;
+  const origin = getRequestOrigin(request);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
@@ -32,7 +43,7 @@ export async function GET(request: Request) {
   if (error) {
     console.error("Google OAuth returned error:", error);
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("Google Sign-In was cancelled or denied.")}`, siteUrl)
+      new URL(`/login?error=${encodeURIComponent("Google Sign-In was cancelled or denied.")}`, origin)
     );
   }
 
@@ -45,13 +56,13 @@ export async function GET(request: Request) {
   // Validate state to prevent CSRF attacks
   if (!state || !savedState || state !== savedState) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("Invalid OAuth state token. Please try again.")}`, siteUrl)
+      new URL(`/login?error=${encodeURIComponent("Invalid OAuth state token. Please try again.")}`, origin)
     );
   }
 
   if (!code) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("No authorization code returned from Google.")}`, siteUrl)
+      new URL(`/login?error=${encodeURIComponent("No authorization code returned from Google.")}`, origin)
     );
   }
 
@@ -60,11 +71,11 @@ export async function GET(request: Request) {
 
   if (!clientId || !clientSecret) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("Google OAuth credentials not configured on server.")}`, siteUrl)
+      new URL(`/login?error=${encodeURIComponent("Google OAuth credentials not configured on server.")}`, origin)
     );
   }
 
-  const redirectUri = `${siteUrl}/api/auth/google/callback`;
+  const redirectUri = `${origin}/api/auth/google/callback`;
 
   try {
     // 1. Exchange authorization code for tokens
@@ -85,7 +96,7 @@ export async function GET(request: Request) {
     if (!tokenRes.ok || !tokenData.access_token) {
       console.error("Failed to exchange Google OAuth code:", tokenData);
       return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent("Failed to exchange authentication code with Google.")}`, siteUrl)
+        new URL(`/login?error=${encodeURIComponent("Failed to exchange authentication code with Google.")}`, origin)
       );
     }
 
@@ -99,7 +110,7 @@ export async function GET(request: Request) {
     if (!userinfoRes.ok || !googleUser.email) {
       console.error("Failed to fetch Google user profile:", googleUser);
       return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent("Failed to fetch verified profile from Google.")}`, siteUrl)
+        new URL(`/login?error=${encodeURIComponent("Failed to fetch verified profile from Google.")}`, origin)
       );
     }
 
@@ -110,7 +121,7 @@ export async function GET(request: Request) {
 
     const profile = await withService(async (sql) => {
       let [existing] = await sql`
-        SELECT id, email, role, full_name FROM public.profiles WHERE email = ${email}
+        SELECT id, email, role, full_name FROM public.profiles WHERE LOWER(email) = LOWER(${email})
       `;
 
       if (!existing) {
@@ -136,11 +147,11 @@ export async function GET(request: Request) {
     await createSession(profile.id);
 
     const targetPath = savedRedirect.startsWith("/") ? savedRedirect : "/client";
-    return NextResponse.redirect(new URL(targetPath, siteUrl));
+    return NextResponse.redirect(new URL(targetPath, origin));
   } catch (err) {
     console.error("Unexpected Google OAuth callback exception:", err);
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("An unexpected error occurred during Google Sign-In.")}`, siteUrl)
+      new URL(`/login?error=${encodeURIComponent("An unexpected error occurred during Google Sign-In.")}`, origin)
     );
   }
 }

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   getAuthChallengeAction,
   signInSealedAction,
+  signInAction,
   signInWithGoogleAction,
 } from "@/app/actions/auth";
 import { sealCredentialsInBrowser } from "@/lib/auth/client-seal";
@@ -32,24 +33,38 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      // 1. Fetch one-time challenge nonce & RSA public key from server
-      const challengeRes = await getAuthChallengeAction();
-      if (!challengeRes.ok) {
-        throw new Error(challengeRes.error || "Unable to acquire security challenge.");
+      let res;
+      const cleanEmail = email.trim();
+
+      // Check if WebCrypto subtle is available (HTTPS or localhost)
+      if (typeof window !== "undefined" && window.crypto && window.crypto.subtle) {
+        // 1. Fetch one-time challenge nonce & RSA public key from server
+        const challengeRes = await getAuthChallengeAction();
+        if (!challengeRes.ok) {
+          throw new Error(challengeRes.error || "Unable to acquire security challenge.");
+        }
+
+        // 2. Encrypt credentials in browser using WebCrypto (RSA-OAEP-256 + AES-256-GCM)
+        // Plaintext password NEVER travels over the network or appears in DevTools Network tab
+        const sealed = await sealCredentialsInBrowser(
+          { email: cleanEmail, password },
+          challengeRes.data
+        );
+
+        // 3. Submit sealed payload
+        res = await signInSealedAction(sealed);
+      } else {
+        // Graceful fallback for non-secure HTTP contexts (e.g. mobile LAN IP testing)
+        const formData = new FormData();
+        formData.append("email", cleanEmail);
+        formData.append("password", password);
+        res = await signInAction(formData);
       }
 
-      // 2. Encrypt credentials in browser using WebCrypto (RSA-OAEP-256 + AES-256-GCM)
-      // Plaintext password NEVER travels over the network or appears in DevTools Network tab
-      const sealed = await sealCredentialsInBrowser(
-        { email: email.trim(), password },
-        challengeRes.data
-      );
-
-      // 3. Submit sealed payload
-      const res = await signInSealedAction(sealed);
       if (!res.ok) {
-        setErrorMsg(res.error || "Authentication failed.");
-        toast.error(res.error || "Authentication failed.");
+        const errorText = res.error || "Invalid email or password.";
+        setErrorMsg(errorText);
+        toast.error(errorText);
         setLoading(false);
         return;
       }
