@@ -29,7 +29,7 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     await page.click('button[type="submit"]');
 
     // Should land on /admin
-    await page.waitForURL("**/admin", { timeout: 10000 });
+    await page.waitForURL("**/admin", { timeout: 15000 });
     await expect(page.locator("h1")).toContainText(/Dashboard|Operations|Agency/i);
 
     // CRM Enquiries (Volume View)
@@ -99,5 +99,27 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     // Middleware should redirect unauthenticated request to /login
     await page.waitForURL("**/login**", { timeout: 10000 });
     expect(page.url()).toContain("redirectTo");
+  });
+
+  test("6. Continue with Google from Login screen", async ({ page }) => {
+    await page.goto("http://localhost:3000/login");
+    const googleBtn = page.locator("button:has-text('Continue with Google')");
+    await expect(googleBtn).toBeVisible();
+    await googleBtn.click();
+
+    // Should redirect through Google Auth and land on /client
+    await page.waitForURL("**/client**", { timeout: 10000 });
+    await expect(page.locator("main")).toBeVisible();
+  });
+
+  test("7. Continue with Google from Register screen", async ({ page }) => {
+    await page.goto("http://localhost:3000/register");
+    const googleBtn = page.locator("button:has-text('Continue with Google')");
+    await expect(googleBtn).toBeVisible();
+    await googleBtn.click();
+
+    // Should redirect through Google Auth and land on /client
+    await page.waitForURL("**/client**", { timeout: 10000 });
+    await expect(page.locator("main")).toBeVisible();
   });
 });

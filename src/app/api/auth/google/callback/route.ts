@@ -38,7 +38,9 @@ export async function GET(request: Request) {
 
   const cookieStore = cookies();
   const savedState = cookieStore.get("google_oauth_state")?.value;
+  const savedRedirect = cookieStore.get("google_oauth_redirect")?.value || "/client";
   cookieStore.delete("google_oauth_state");
+  cookieStore.delete("google_oauth_redirect");
 
   // Validate state to prevent CSRF attacks
   if (!state || !savedState || state !== savedState) {
@@ -133,7 +135,8 @@ export async function GET(request: Request) {
     // 4. Establish authenticated session
     await createSession(profile.id);
 
-    return NextResponse.redirect(new URL("/client", siteUrl));
+    const targetPath = savedRedirect.startsWith("/") ? savedRedirect : "/client";
+    return NextResponse.redirect(new URL(targetPath, siteUrl));
   } catch (err) {
     console.error("Unexpected Google OAuth callback exception:", err);
     return NextResponse.redirect(

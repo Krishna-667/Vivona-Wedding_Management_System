@@ -10,13 +10,24 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || `${url.protocol}//${url.host}`;
   const clientId = process.env.GOOGLE_CLIENT_ID;
+  const redirectTo = url.searchParams.get("redirectTo") || "/client";
+
+  const cookieStore = cookies();
+
+  // Save intended redirect target
+  cookieStore.set("google_oauth_redirect", redirectTo, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 10,
+  });
 
   // 1. If Google Client ID is configured, initiate actual Google OAuth 2.0 flow
   if (clientId) {
     const state = randomBytes(24).toString("hex");
     const redirectUri = `${siteUrl}/api/auth/google/callback`;
 
-    const cookieStore = cookies();
     cookieStore.set("google_oauth_state", state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -39,7 +50,7 @@ export async function GET(request: Request) {
 
   // 2. Seamless local / offline fallback when GOOGLE_CLIENT_ID is not yet configured
   const demoEmail = "google.couple@vivona.demo";
-  const demoName = "Priyamvada & Rohan (Google Auth)";
+  const demoName = "Priyamvada & Rohan (Google Client)";
 
   const profile = await withService(async (sql) => {
     let [row] = await sql`
@@ -56,5 +67,6 @@ export async function GET(request: Request) {
   });
 
   await createSession(profile.id);
-  return NextResponse.redirect(new URL("/client?auth=google_local", siteUrl));
+  const targetPath = redirectTo.startsWith("/") ? redirectTo : "/client";
+  return NextResponse.redirect(new URL(targetPath, siteUrl));
 }

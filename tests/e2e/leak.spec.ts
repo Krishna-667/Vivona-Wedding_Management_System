@@ -35,7 +35,7 @@ test("R5 Leak Test: Plaintext sentinel password must NEVER appear in Network, St
   await page.goto("http://localhost:3000/login", { waitUntil: "networkidle" });
 
   // 2. Fill login with sentinel credentials
-  await page.fill('input[type="email"]', "admin@vivona.demo");
+  await page.fill('input[type="email"]', "sentinel.leak.test@vivona.demo");
   await page.fill('input[type="password"]', sentinelPassword);
 
   // 3. Submit sealed login form
