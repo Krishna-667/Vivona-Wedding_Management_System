@@ -173,7 +173,7 @@ function LoginForm() {
             }}
             required
             autoComplete="username"
-            placeholder="e.g. admin@vivona.demo"
+            placeholder="e.g. devraj@vivona.in or your email"
             className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
           />
         </div>

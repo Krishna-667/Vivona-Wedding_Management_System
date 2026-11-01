@@ -377,3 +377,61 @@ export async function inviteEmployeeAction(
 
   return { ok: true, data: { id: employeeId } };
 }
+
+/**
+ * Updates the user's password securely with argon2id.
+ * Verifies current password if provided, and enforces minimum 8 characters.
+ */
+export async function updatePasswordAction(data: {
+  currentPassword?: string;
+  newPassword: string;
+}): Promise<ActionResponse<{ message: string }>> {
+  try {
+    const session = await getSessionProfile();
+    if (!session) {
+      return { ok: false, error: "Unauthorized: Please sign in to change your password." };
+    }
+
+    if (!data.newPassword || data.newPassword.length < 8) {
+      return { ok: false, error: "New password must be at least 8 characters long." };
+    }
+
+    const userId = session.profile.id;
+
+    if (data.currentPassword) {
+      const cred = await withService(async (sql) => {
+        const [row] = await sql`
+          SELECT password_hash FROM private.auth_credentials WHERE profile_id = ${userId}
+        `;
+        return row;
+      });
+
+      if (cred?.password_hash) {
+        const isValid = await verifyPassword(data.currentPassword, cred.password_hash);
+        if (!isValid) {
+          return { ok: false, error: "Current password does not match." };
+        }
+      }
+    }
+
+    const newHash = await hashPassword(data.newPassword);
+
+    await withService(async (sql) => {
+      await sql`
+        INSERT INTO private.auth_credentials (profile_id, password_hash)
+        VALUES (${userId}, ${newHash})
+        ON CONFLICT (profile_id) DO UPDATE SET password_hash = EXCLUDED.password_hash
+      `;
+
+      await sql`
+        INSERT INTO public.audit_events (actor_id, action, entity_type, entity_id, new_data)
+        VALUES (${userId}, 'CHANGE_PASSWORD', 'profiles', ${userId}, ${sql.json({ changed: true })})
+      `;
+    });
+
+    return { ok: true, data: { message: "Password updated successfully!" } };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to update password.";
+    return { ok: false, error: message };
+  }
+}

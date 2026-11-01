@@ -5,6 +5,7 @@ import { getSessionProfile } from "@/lib/auth/session";
 import { signOutAction } from "@/app/actions/auth";
 import { AdminMobileNav } from "@/components/navigation/admin-mobile-nav";
 import { AdminBottomNav } from "@/components/navigation/admin-bottom-nav";
+import { ChangePasswordDialog } from "@/components/features/auth/change-password-dialog";
 
 export default async function AdminLayout({
   children,
@@ -67,6 +68,9 @@ export default async function AdminLayout({
             <span className="text-[10px] bg-maroon/10 text-maroon font-bold px-2 py-0.5 rounded-full">
               Full Access
             </span>
+          </div>
+          <div className="pt-1">
+            <ChangePasswordDialog triggerText="Change Password" />
           </div>
           <form action={signOutAction}>
             <button

@@ -29,7 +29,7 @@ function GoogleConsentForm() {
   const accounts = [
     {
       name: "Devraj Rathore",
-      email: "admin@vivona.demo",
+      email: "devraj@vivona.in",
       role: "Admin (Executive)",
       badge: "bg-maroon/10 text-maroon border-maroon/20",
       avatarBg: "bg-maroon text-ivory",
@@ -37,7 +37,7 @@ function GoogleConsentForm() {
     },
     {
       name: "Ananya Sharma",
-      email: "planner1@vivona.demo",
+      email: "ananya@vivona.in",
       role: "Employee (Lead Planner)",
       badge: "bg-sage-100 text-sage-900 border-sage-300",
       avatarBg: "bg-sage-700 text-ivory",
@@ -52,12 +52,12 @@ function GoogleConsentForm() {
       initials: "P",
     },
     {
-      name: "Priyamvada & Rohan",
-      email: "couple1@vivona.demo",
+      name: "Rohan & Priyamvada",
+      email: "rohan.priyamvada@gmail.com",
       role: "Client (Couple)",
       badge: "bg-gold-50 text-gold-900 border-gold-300",
       avatarBg: "bg-gold-600 text-white",
-      initials: "PR",
+      initials: "RP",
     },
   ];
 
@@ -280,15 +280,12 @@ function GoogleConsentForm() {
         {/* STEP 2: Password Verification (Real Authentication) */}
         {step === "password" && selectedAccount && (
           <form onSubmit={handleVerifyPassword} className="space-y-4 mb-6">
-            <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 space-y-1">
+            <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-900 space-y-1">
               <p className="font-semibold flex items-center gap-1.5">
-                <span>🔒 Security Verification Required</span>
+                <span>🔒 Security Verification</span>
               </p>
               <p>
-                Enter your password to verify ownership of <strong>{selectedAccount.email}</strong>.
-              </p>
-              <p className="text-[11px] text-amber-800/80">
-                (Demo accounts use password: <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300">ChangeMe-Demo#2026</code>)
+                Enter the password for <strong>{selectedAccount.email}</strong> to verify your identity and access your Vivona workspace.
               </p>
             </div>
 

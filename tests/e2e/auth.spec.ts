@@ -46,7 +46,7 @@ test.describe("Auth Debug & Verification", () => {
     await prithithCard.click();
 
     // Verify password verification step is displayed
-    await expect(page.locator("text=Security Verification Required")).toBeVisible();
+    await expect(page.locator("text=Security Verification")).toBeVisible();
     const passwordInput = page.locator('input[type="password"]');
     await expect(passwordInput).toBeVisible();
 

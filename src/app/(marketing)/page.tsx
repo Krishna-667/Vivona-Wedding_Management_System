@@ -378,54 +378,63 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Role Quick-Access Showcase */}
+      {/* Role-Dedicated Workspaces */}
       <section className="container">
         <div className="rounded-2xl border border-maroon/20 bg-ivory-300/50 p-8 md:p-12 text-center space-y-6">
           <h2 className="font-serif text-3xl font-semibold text-maroon">
-            Experience the 3 Built-in Roles
+            Dedicated Workspaces for Every Stakeholder
           </h2>
           <p className="text-sm text-charcoal/75 max-w-xl mx-auto font-sans">
-            Log in directly using pre-configured local demo credentials to review the role-gated UI and security boundary.
+            Unified access across luxury destination wedding operations with enterprise-grade security and role-specific permissions.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto text-left">
             <Link
-              href="/login?demo=admin"
+              href="/login"
               className="group block rounded-xl border border-border bg-card p-5 hover:border-maroon transition-all shadow-sm"
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-maroon">Admin</span>
-                <span className="text-xs bg-maroon/10 text-maroon px-2 py-0.5 rounded-full">Founder</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-maroon">Executive Suite</span>
+                <span className="text-xs bg-maroon/10 text-maroon px-2 py-0.5 rounded-full font-medium">Leadership</span>
               </div>
-              <p className="text-sm font-medium text-charcoal group-hover:text-maroon">Devraj Rathore</p>
-              <p className="text-xs text-charcoal/60 mt-1 font-mono">admin@vivona.demo</p>
-              <p className="text-xs text-charcoal/70 mt-3">Full pipeline, quotes, finance & season analytics</p>
+              <p className="text-sm font-semibold text-charcoal group-hover:text-maroon">Administration</p>
+              <p className="text-xs text-charcoal/60 mt-1">Founders & Managing Directors</p>
+              <p className="text-xs text-charcoal/70 mt-3">Full enquiry pipeline, vendor RFQs, margin settlement & season performance analytics.</p>
+              <div className="mt-4 text-xs font-semibold text-maroon flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                Sign In to Admin →
+              </div>
             </Link>
 
             <Link
-              href="/login?demo=employee"
+              href="/login"
               className="group block rounded-xl border border-border bg-card p-5 hover:border-maroon transition-all shadow-sm"
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-sage-500">Employee</span>
-                <span className="text-xs bg-sage-100 text-sage-600 px-2 py-0.5 rounded-full">Lead Planner</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-sage-600">Operations Desk</span>
+                <span className="text-xs bg-sage-100 text-sage-700 px-2 py-0.5 rounded-full font-medium">On-Ground</span>
               </div>
-              <p className="text-sm font-medium text-charcoal group-hover:text-maroon">Ananya Sharma</p>
-              <p className="text-xs text-charcoal/60 mt-1 font-mono">planner1@vivona.demo</p>
-              <p className="text-xs text-charcoal/70 mt-3">Task board, client chat, and live big-day console</p>
+              <p className="text-sm font-semibold text-charcoal group-hover:text-maroon">Planners & Team</p>
+              <p className="text-xs text-charcoal/60 mt-1">Lead Planners & Coordinators</p>
+              <p className="text-xs text-charcoal/70 mt-3">Live wedding day itinerary, vendor check-ins, guest incident logging & labour timesheets.</p>
+              <div className="mt-4 text-xs font-semibold text-sage-700 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                Sign In to Operations →
+              </div>
             </Link>
 
             <Link
-              href="/login?demo=client"
+              href="/login"
               className="group block rounded-xl border border-border bg-card p-5 hover:border-maroon transition-all shadow-sm"
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-gold-500">Client</span>
-                <span className="text-xs bg-gold-100 text-gold-600 px-2 py-0.5 rounded-full">Couple</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-gold-600">Client Portal</span>
+                <span className="text-xs bg-gold-100 text-gold-800 px-2 py-0.5 rounded-full font-medium">Couples</span>
               </div>
-              <p className="text-sm font-medium text-charcoal group-hover:text-maroon">Rohan & Priyamvada</p>
-              <p className="text-xs text-charcoal/60 mt-1 font-mono">couple1@vivona.demo</p>
-              <p className="text-xs text-charcoal/70 mt-3">Milestone view, proposal acceptance & e-sign</p>
+              <p className="text-sm font-semibold text-charcoal group-hover:text-maroon">Couples & Families</p>
+              <p className="text-xs text-charcoal/60 mt-1">Jaipur & Udaipur Weddings</p>
+              <p className="text-xs text-charcoal/70 mt-3">Shortlisted palace reviews, proposal acceptance, digital agreement signing & concierge chat.</p>
+              <div className="mt-4 text-xs font-semibold text-gold-700 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                Sign In to Portal →
+              </div>
             </Link>
           </div>
         </div>

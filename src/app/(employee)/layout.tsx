@@ -4,6 +4,7 @@ import { Logo } from "@/components/ui/logo";
 import { getSessionProfile } from "@/lib/auth/session";
 import { signOutAction } from "@/app/actions/auth";
 import { EmployeeBottomNav } from "@/components/navigation/employee-bottom-nav";
+import { ChangePasswordDialog } from "@/components/features/auth/change-password-dialog";
 
 export default async function EmployeeLayout({
   children,
@@ -57,6 +58,9 @@ export default async function EmployeeLayout({
           <div>
             <p className="text-xs font-semibold text-charcoal">{session.profile.full_name}</p>
             <p className="text-[11px] text-charcoal/60 capitalize">{session.profile.role} (On-Ground Lead)</p>
+          </div>
+          <div className="pt-1">
+            <ChangePasswordDialog triggerText="Change Password" />
           </div>
           <form action={signOutAction}>
             <button
