@@ -101,36 +101,26 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     expect(page.url()).toContain("redirectTo");
   });
 
-  test("6. Continue with Google from Login screen", async ({ page }) => {
+  test("6. Continue with Google from Login screen initiates OAuth route", async ({ page }) => {
     await page.goto("http://localhost:3000/login");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    // The Google auth dialog opens when live keys are not configured
-    const modalInput = page.locator('input[placeholder*="@gmail.com"]');
-    await expect(modalInput).toBeVisible({ timeout: 5000 });
-    await modalInput.fill("prithitha24it@psnacet.edu.in");
-    await page.click("button:has-text('Continue to Client Portal')");
-
-    // Should redirect and land on /client
-    await page.waitForURL("**/client**", { timeout: 10000 });
-    await expect(page.locator("main")).toBeVisible();
+    // Verifies navigation to OAuth endpoint without any fake prompt or bypass
+    await page.waitForURL("**/login?error=**", { timeout: 10000 });
+    const errorMsg = page.locator("text=Google Sign-In is not configured");
+    await expect(errorMsg).toBeVisible();
   });
 
-  test("7. Continue with Google from Register screen", async ({ page }) => {
+  test("7. Continue with Google from Register screen initiates OAuth route", async ({ page }) => {
     await page.goto("http://localhost:3000/register");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    const modalInput = page.locator('input[placeholder*="@gmail.com"]');
-    await expect(modalInput).toBeVisible({ timeout: 5000 });
-    await modalInput.fill("client.google@gmail.com");
-    await page.click("button:has-text('Continue to Client Portal')");
-
-    // Should redirect and land on /client
-    await page.waitForURL("**/client**", { timeout: 10000 });
-    await expect(page.locator("main")).toBeVisible();
+    await page.waitForURL("**/login?error=**", { timeout: 10000 });
+    const errorMsg = page.locator("text=Google Sign-In is not configured");
+    await expect(errorMsg).toBeVisible();
   });
 });

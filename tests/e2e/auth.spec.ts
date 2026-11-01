@@ -31,28 +31,19 @@ test.describe("Auth Debug & Verification", () => {
     expect(page.url()).toContain("/login");
   });
 
-  test("Google auth interactive dialog allows real custom email authentication", async ({ page }) => {
+  test("Continue with Google initiates real OAuth flow without fake bypass", async ({ page }) => {
     await page.goto("http://localhost:3000/login");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    // Verify interactive modal opens
+    // Verify it initiates OAuth route (/api/auth/google) and gracefully handles server OAuth config
+    await page.waitForURL("**/login?error=**", { timeout: 10000 });
+    const errorMsg = page.locator("text=Google Sign-In is not configured");
+    await expect(errorMsg).toBeVisible();
+
+    // Verify no fake modal or unverified prompt exists
     const modalInput = page.locator('input[placeholder*="@gmail.com"]');
-    await expect(modalInput).toBeVisible({ timeout: 5000 });
-
-    // Fill with custom Google account
-    await modalInput.fill("prithitha24it@psnacet.edu.in");
-    const nameInput = page.locator('input[placeholder*="Priyamvada & Rohan"]');
-    if (await nameInput.isVisible()) {
-      await nameInput.fill("Prithith (Google Client)");
-    }
-
-    // Submit
-    await page.click("button:has-text('Continue to Client Portal')");
-
-    // Successfully lands on /client portal
-    await page.waitForURL("**/client**", { timeout: 10000 });
-    await expect(page.locator("main")).toBeVisible();
+    await expect(modalInput).toHaveCount(0);
   });
 });

@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 interface GoogleTokenResponse {
   access_token?: string;
   id_token?: string;
+  token_type?: string;
+  expires_in?: number;
   error?: string;
   error_description?: string;
 }
@@ -15,7 +17,8 @@ interface GoogleTokenResponse {
 interface GoogleUserInfo {
   id: string;
   email: string;
-  verified_email: boolean;
+  verified_email?: boolean;
+  email_verified?: boolean;
   name: string;
   given_name?: string;
   family_name?: string;
@@ -33,6 +36,11 @@ function getRequestOrigin(request: Request): string {
   return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 }
 
+/**
+ * Handles the OAuth 2.0 callback from Google.
+ * Verifies state, exchanges code for tokens with PKCE verifier,
+ * cryptographically validates Google user identity, and establishes a secure DB session.
+ */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const origin = getRequestOrigin(request);
@@ -49,11 +57,15 @@ export async function GET(request: Request) {
 
   const cookieStore = cookies();
   const savedState = cookieStore.get("google_oauth_state")?.value;
+  const savedVerifier = cookieStore.get("google_oauth_verifier")?.value;
   const savedRedirect = cookieStore.get("google_oauth_redirect")?.value || "/client";
+
+  // Cleanup temporary OAuth cookies
   cookieStore.delete("google_oauth_state");
+  cookieStore.delete("google_oauth_verifier");
   cookieStore.delete("google_oauth_redirect");
 
-  // Validate state to prevent CSRF attacks
+  // Validate state against CSRF
   if (!state || !savedState || state !== savedState) {
     return NextResponse.redirect(
       new URL(`/login?error=${encodeURIComponent("Invalid OAuth state token. Please try again.")}`, origin)
@@ -66,8 +78,8 @@ export async function GET(request: Request) {
     );
   }
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
 
   if (!clientId || !clientSecret) {
     return NextResponse.redirect(
@@ -78,17 +90,23 @@ export async function GET(request: Request) {
   const redirectUri = `${origin}/api/auth/google/callback`;
 
   try {
-    // 1. Exchange authorization code for tokens
+    // 1. Exchange authorization code with PKCE verifier for access & ID tokens
+    const tokenParams = new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    });
+
+    if (savedVerifier) {
+      tokenParams.set("code_verifier", savedVerifier);
+    }
+
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      }),
+      body: tokenParams,
     });
 
     const tokenData = (await tokenRes.json()) as GoogleTokenResponse;
@@ -96,11 +114,16 @@ export async function GET(request: Request) {
     if (!tokenRes.ok || !tokenData.access_token) {
       console.error("Failed to exchange Google OAuth code:", tokenData);
       return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent("Failed to exchange authentication code with Google.")}`, origin)
+        new URL(
+          `/login?error=${encodeURIComponent(
+            tokenData.error_description || "Failed to exchange authentication code with Google."
+          )}`,
+          origin
+        )
       );
     }
 
-    // 2. Fetch user profile from Google UserInfo endpoint
+    // 2. Fetch authenticated and verified user profile from Google UserInfo
     const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
@@ -114,22 +137,37 @@ export async function GET(request: Request) {
       );
     }
 
-    // 3. Provision or link client account in database
+    // 3. Ensure the Google email has been verified by Google
+    const isEmailVerified = googleUser.verified_email ?? googleUser.email_verified ?? false;
+    if (!isEmailVerified) {
+      return NextResponse.redirect(
+        new URL(
+          `/login?error=${encodeURIComponent(
+            "Your Google email is not verified. Please verify your Google account first."
+          )}`,
+          origin
+        )
+      );
+    }
+
+    // 4. Provision or link client account in database
     const email = googleUser.email.toLowerCase().trim();
     const fullName = googleUser.name || "Client (Google Auth)";
     const avatarUrl = googleUser.picture || null;
 
     const profile = await withService(async (sql) => {
       let [existing] = await sql`
-        SELECT id, email, role, full_name FROM public.profiles WHERE LOWER(email) = LOWER(${email})
+        SELECT id, email, role, full_name, avatar_url, is_active
+        FROM public.profiles
+        WHERE LOWER(email) = LOWER(${email})
       `;
 
       if (!existing) {
-        // Enforce 0.3: Public/Google registration provisions client role only
+        // Enforce Rule 0.3: Public/Google registration provisions client role only
         [existing] = await sql`
           INSERT INTO public.profiles (email, full_name, avatar_url, role, is_active)
           VALUES (${email}, ${fullName}, ${avatarUrl}, 'client', true)
-          RETURNING id, email, role, full_name
+          RETURNING id, email, role, full_name, avatar_url, is_active
         `;
       } else if (avatarUrl && !existing.avatar_url) {
         // Update avatar if not already present
@@ -143,10 +181,23 @@ export async function GET(request: Request) {
       return existing;
     });
 
-    // 4. Establish authenticated session
+    if (!profile.is_active) {
+      return NextResponse.redirect(
+        new URL(`/login?error=${encodeURIComponent("This account has been deactivated.")}`, origin)
+      );
+    }
+
+    // 5. Establish authenticated database-backed session
     await createSession(profile.id);
 
-    const targetPath = savedRedirect.startsWith("/") ? savedRedirect : "/client";
+    // 6. Route to role-specific dashboard
+    let targetPath = savedRedirect.startsWith("/") ? savedRedirect : "/client";
+    if (profile.role === "admin") {
+      targetPath = "/admin";
+    } else if (profile.role === "employee") {
+      targetPath = "/employee";
+    }
+
     return NextResponse.redirect(new URL(targetPath, origin));
   } catch (err) {
     console.error("Unexpected Google OAuth callback exception:", err);

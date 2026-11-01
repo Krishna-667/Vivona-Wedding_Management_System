@@ -8,20 +8,17 @@ import {
   getAuthChallengeAction,
   signInSealedAction,
   signInAction,
-  getGoogleAuthConfigAction,
 } from "@/app/actions/auth";
 import { sealCredentialsInBrowser } from "@/lib/auth/client-seal";
-import { GoogleAuthModal } from "@/components/auth/google-auth-modal";
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get("error");
-  const isGooglePrompt = searchParams.get("googleAuth") === "prompt";
+  const redirectTo = searchParams.get("redirectTo") || "/client";
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
-  const [showGoogleModal, setShowGoogleModal] = React.useState(isGooglePrompt);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(urlError);
 
   React.useEffect(() => {
@@ -29,12 +26,6 @@ function LoginForm() {
       setErrorMsg(urlError);
     }
   }, [urlError]);
-
-  React.useEffect(() => {
-    if (isGooglePrompt) {
-      setShowGoogleModal(true);
-    }
-  }, [isGooglePrompt]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -89,24 +80,11 @@ function LoginForm() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = () => {
     setGoogleLoading(true);
     setErrorMsg(null);
-
-    try {
-      const cfg = await getGoogleAuthConfigAction();
-      if (cfg.ok && cfg.data.isConfigured) {
-        // Live Google OAuth credentials exist! Redirect directly to Google's official OAuth consent
-        window.location.href = "/api/auth/google";
-      } else {
-        // Open Google Authentication modal to enter Google email or configure keys
-        setGoogleLoading(false);
-        setShowGoogleModal(true);
-      }
-    } catch {
-      setGoogleLoading(false);
-      setShowGoogleModal(true);
-    }
+    // Standard OAuth 2.0 flow: navigates to server auth route, which redirects to accounts.google.com
+    window.location.href = `/api/auth/google?redirectTo=${encodeURIComponent(redirectTo)}`;
   };
 
   return (
@@ -128,7 +106,7 @@ function LoginForm() {
           type="button"
           onClick={handleGoogleSignIn}
           disabled={googleLoading || loading}
-          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50 active:scale-[0.99]"
+          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50 active:scale-[0.99] cursor-pointer"
         >
           <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
             <path
@@ -162,8 +140,11 @@ function LoginForm() {
       </div>
 
       {errorMsg && (
-        <div className="p-3.5 text-xs rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-medium animate-in fade-in">
-          {errorMsg}
+        <div className="p-3.5 text-xs rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-medium animate-in fade-in flex items-start gap-2">
+          <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{errorMsg}</span>
         </div>
       )}
 
@@ -207,7 +188,7 @@ function LoginForm() {
         <button
           type="submit"
           disabled={loading || googleLoading}
-          className="w-full min-h-[48px] rounded-xl bg-maroon px-4 py-3 text-sm font-semibold text-ivory hover:bg-maroon-600 disabled:opacity-50 transition-all shadow-sm flex items-center justify-center gap-2 active:scale-[0.99]"
+          className="w-full min-h-[48px] rounded-xl bg-maroon px-4 py-3 text-sm font-semibold text-ivory hover:bg-maroon-600 disabled:opacity-50 transition-all shadow-sm flex items-center justify-center gap-2 active:scale-[0.99] cursor-pointer"
         >
           {loading ? (
             <span className="inline-block animate-pulse">Sealing & Authenticating...</span>
@@ -225,13 +206,6 @@ function LoginForm() {
           </Link>
         </p>
       </div>
-
-      {/* Google Authentication Dialog */}
-      <GoogleAuthModal
-        isOpen={showGoogleModal}
-        onClose={() => setShowGoogleModal(false)}
-        redirectTo="/client"
-      />
     </div>
   );
 }
