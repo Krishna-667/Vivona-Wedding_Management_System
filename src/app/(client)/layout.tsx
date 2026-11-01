@@ -3,7 +3,6 @@ import { Logo } from "@/components/ui/logo";
 import { requireRole } from "@/lib/auth/permissions";
 import { signOutAction } from "@/app/actions/auth";
 import { ClientBottomNav } from "@/components/navigation/client-bottom-nav";
-import { ChangePasswordDialog } from "@/components/features/auth/change-password-dialog";
 
 export default async function ClientLayout({
   children,
@@ -55,7 +54,6 @@ export default async function ClientLayout({
                 {session.user.email}
               </p>
             </div>
-            <ChangePasswordDialog triggerText="Password" variant="button" />
             <form action={signOutAction}>
               <button
                 type="submit"
