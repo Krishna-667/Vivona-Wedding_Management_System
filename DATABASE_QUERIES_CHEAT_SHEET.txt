@@ -1,0 +1,180 @@
+================================================================================
+           VIVONA LOCAL POSTGRESQL DATABASE - SQL QUERY CHEAT SHEET
+================================================================================
+
+This file contains copy-paste ready commands to connect to and query both the
+PUBLIC and PRIVATE schemas of your local Vivona database.
+
+--------------------------------------------------------------------------------
+1. HOW TO CONNECT TO THE DATABASE
+--------------------------------------------------------------------------------
+
+Option A: Open Interactive SQL Shell (psql)
+Run this single command in PowerShell:
+
+$env:PGPASSWORD="ChangeMe_Owner#2026"; & "d:\Projects\Odoo\Vivona\.local-db\pgsql\bin\psql.exe" -U vivona_owner -d vivona -h 127.0.0.1 -p 5432
+
+(Type \q and press Enter anytime you want to exit)
+
+
+Option B: Connect with GUI Tools (DBeaver, TablePlus, pgAdmin, VS Code)
+Host:        127.0.0.1 (or localhost)
+Port:        5432
+Database:    vivona
+Username:    vivona_owner
+Password:    ChangeMe_Owner#2026
+
+
+--------------------------------------------------------------------------------
+2. LISTING SCHEMAS AND TABLES
+--------------------------------------------------------------------------------
+
+-- List all 33 business tables in the PUBLIC schema:
+\dt public.*
+
+-- List all 7 security tables in the PRIVATE schema:
+\dt private.*
+
+-- Describe columns and types of any specific table (example: weddings):
+\d public.weddings
+
+-- Describe private sessions table:
+\d private.sessions
+
+
+--------------------------------------------------------------------------------
+3. USEFUL QUERIES: PUBLIC SCHEMA (BUSINESS DATA)
+--------------------------------------------------------------------------------
+
+-- 1. View Destination Weddings (Top 10)
+SELECT code, title, venue, city, status, guest_count_planned, 
+       (budget_paise / 1000000000.0)::numeric(10,2) || ' Cr' AS budget_inr
+FROM public.weddings
+ORDER BY start_date DESC
+LIMIT 10;
+
+-- 2. View Sales Enquiries Pipeline (Top 15)
+SELECT contact_name, city, estimated_guests, status, created_at::date AS enquiry_date
+FROM public.enquiries
+ORDER BY created_at DESC
+LIMIT 15;
+
+-- 3. View Enquiries Count by Status
+SELECT status, count(*) AS total_enquiries
+FROM public.enquiries
+GROUP BY status
+ORDER BY total_enquiries DESC;
+
+-- 4. View Curated Vendors by Category
+SELECT name, category, city, rating, base_price_paise / 100 AS base_price_inr
+FROM public.vendors
+ORDER BY category, rating DESC
+LIMIT 15;
+
+-- 5. View Operational Tasks for a Wedding
+SELECT t.title, t.category, t.status, t.due_date, w.title AS wedding
+FROM public.tasks t
+JOIN public.weddings w ON w.id = t.wedding_id
+LIMIT 15;
+
+-- 6. View Vendor Bills and Approved Amounts
+SELECT b.bill_number, v.name AS vendor_name, b.status, 
+       (b.amount_paise / 100.0)::numeric(12,2) AS bill_amount_inr,
+       (b.paid_amount_paise / 100.0)::numeric(12,2) AS paid_amount_inr
+FROM public.vendor_bills b
+JOIN public.vendors v ON v.id = b.vendor_id
+ORDER BY b.created_at DESC
+LIMIT 15;
+
+-- 7. View Client Advance Receipts
+SELECT receipt_number, (amount_paise / 100.0)::numeric(12,2) AS amount_inr, 
+       payment_method, reference, received_at::date
+FROM public.client_receipts
+ORDER BY received_at DESC
+LIMIT 10;
+
+-- 8. View User Profiles by Role (Admin, Employee, Client)
+SELECT full_name, email, role, phone, created_at::date
+FROM public.profiles
+ORDER BY role, created_at DESC
+LIMIT 20;
+
+
+--------------------------------------------------------------------------------
+4. USEFUL QUERIES: PRIVATE SCHEMA (SECURITY & AUTH DATA)
+--------------------------------------------------------------------------------
+
+-- 1. View Password Hashes (Argon2id - notice passwords are never plaintext)
+SELECT profile_id, 
+       LEFT(password_hash, 35) || '...' AS argon2id_hash, 
+       failure_count, 
+       locked_until, 
+       updated_at
+FROM private.auth_credentials
+LIMIT 10;
+
+-- 2. View Active Logged-In Sessions
+SELECT s.id, p.email, p.role, 
+       LEFT(s.token_hash, 16) || '...' AS session_token_hash, 
+       s.expires_at, 
+       s.last_seen_at
+FROM private.sessions s
+JOIN public.profiles p ON p.id = s.profile_id
+ORDER BY s.last_seen_at DESC
+LIMIT 10;
+
+-- 3. View Google OAuth Linked Accounts
+SELECT o.email, o.provider, o.provider_sub, p.role, o.created_at
+FROM private.oauth_identities o
+JOIN public.profiles p ON p.id = o.profile_id;
+
+-- 4. View Security Login Attempts & Lockout Audit Trail
+SELECT email, ip_address, success, attempted_at
+FROM private.login_attempts
+ORDER BY attempted_at DESC
+LIMIT 15;
+
+-- 5. View Active OAuth PKCE Transactions
+SELECT id, state_hash, return_to, expires_at, created_at
+FROM private.oauth_transactions
+ORDER BY created_at DESC
+LIMIT 5;
+
+-- 6. View Employee Invitation Tokens
+SELECT email, role, full_name, hourly_rate_paise / 100 AS hourly_rate_inr, 
+       expires_at, used_at
+FROM private.invite_tokens
+ORDER BY created_at DESC;
+
+
+--------------------------------------------------------------------------------
+5. QUICK DATABASE VOLUME & RECORD COUNTS
+--------------------------------------------------------------------------------
+
+-- Count records across main tables:
+SELECT 'tasks' AS table_name, count(*) FROM public.tasks UNION ALL
+SELECT 'vendor_bills', count(*) FROM public.vendor_bills UNION ALL
+SELECT 'enquiries', count(*) FROM public.enquiries UNION ALL
+SELECT 'vendors', count(*) FROM public.vendors UNION ALL
+SELECT 'profiles', count(*) FROM public.profiles UNION ALL
+SELECT 'vendor_quotes', count(*) FROM public.vendor_quotes UNION ALL
+SELECT 'weddings', count(*) FROM public.weddings UNION ALL
+SELECT 'client_receipts', count(*) FROM public.client_receipts UNION ALL
+SELECT 'auth_credentials (private)', count(*) FROM private.auth_credentials UNION ALL
+SELECT 'sessions (private)', count(*) FROM private.sessions UNION ALL
+SELECT 'login_attempts (private)', count(*) FROM private.login_attempts;
+
+
+--------------------------------------------------------------------------------
+6. RUNNING ONE-OFF QUERIES DIRECTLY FROM POWERSHELL (WITHOUT ENTERING PROMPT)
+--------------------------------------------------------------------------------
+
+You can pass any SQL query directly using the -c flag in PowerShell:
+
+Example: Check wedding counts and total revenue
+$env:PGPASSWORD="ChangeMe_Owner#2026"; & "d:\Projects\Odoo\Vivona\.local-db\pgsql\bin\psql.exe" -U vivona_owner -d vivona -h 127.0.0.1 -p 5432 -c "SELECT count(*) AS total_weddings, (sum(budget_paise) / 1000000000.0)::numeric(10,2) || ' Cr' AS total_portfolio_value FROM public.weddings;"
+
+Example: Check latest 5 enquiries
+$env:PGPASSWORD="ChangeMe_Owner#2026"; & "d:\Projects\Odoo\Vivona\.local-db\pgsql\bin\psql.exe" -U vivona_owner -d vivona -h 127.0.0.1 -p 5432 -c "SELECT contact_name, city, status, created_at::date FROM public.enquiries ORDER BY created_at DESC LIMIT 5;"
+
+================================================================================
