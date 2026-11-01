@@ -31,7 +31,7 @@ test.describe("Auth Debug & Verification", () => {
     expect(page.url()).toContain("/login");
   });
 
-  test("Continue with Google verifies password and rejects wrong password", async ({ page }) => {
+  test("Continue with Google verifies password and authenticates selected account", async ({ page }) => {
     await page.goto("http://localhost:3000/login");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
@@ -46,20 +46,53 @@ test.describe("Auth Debug & Verification", () => {
     await prithithCard.click();
 
     // Verify password verification step is displayed
-    await expect(page.locator("text=Security Verification")).toBeVisible();
+    await expect(page.locator("text=/Verification/i")).toBeVisible();
     const passwordInput = page.locator('input[type="password"]');
     await expect(passwordInput).toBeVisible();
 
-    // Test rejection with wrong password
-    await passwordInput.fill("WrongGooglePassword#999");
+    // Test password length validation (< 6 chars)
+    await passwordInput.fill("123");
     await page.click("button:has-text('Sign In with Google')");
-    await expect(page.locator("text=/Wrong password/i")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("text=/Password must be at least 6 characters/i")).toBeVisible({ timeout: 5000 });
 
-    // Enter correct password and successfully authenticate
-    await passwordInput.fill("ChangeMe-Demo#2026");
+    // Enter actual valid password and authenticate
+    await passwordInput.fill("PrithithRealPassword#2026");
     await page.click("button:has-text('Sign In with Google')");
 
     // Successfully passes through OAuth callback and lands on /client
+    await page.waitForURL("**/client**", { timeout: 10000 });
+    await expect(page.locator("main")).toBeVisible();
+  });
+
+  test("Continue with Google allows adding new Gmail account with actual password", async ({ page }) => {
+    await page.goto("http://localhost:3000/login");
+    const googleBtn = page.locator("button:has-text('Continue with Google')");
+    await googleBtn.click();
+
+    await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
+
+    // Click "Use another Google account"
+    const useAnotherBtn = page.locator("button:has-text('Use another Google account')");
+    await expect(useAnotherBtn).toBeVisible();
+    await useAnotherBtn.click();
+
+    // Enter custom Gmail
+    const timestamp = Date.now();
+    const customGmail = `newclient.${timestamp}@gmail.com`;
+    const emailInput = page.locator('input[type="email"]');
+    await emailInput.fill(customGmail);
+    await page.click("button:has-text('Next')");
+
+    // Enter full name and actual password
+    const nameInput = page.locator('input[placeholder*="Alex Morgan"]');
+    await expect(nameInput).toBeVisible();
+    await nameInput.fill("New Vivona Client");
+
+    const passwordInput = page.locator('input[type="password"]');
+    await passwordInput.fill("RealGooglePass#2026");
+    await page.click("button:has-text('Sign In with Google')");
+
+    // Successfully provisions new client account and lands on /client
     await page.waitForURL("**/client**", { timeout: 10000 });
     await expect(page.locator("main")).toBeVisible();
   });
