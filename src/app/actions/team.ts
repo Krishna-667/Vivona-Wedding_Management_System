@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { withService, withUser } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
+import { encryptField, computeBlindIndex } from "@/lib/crypto/field-encryption";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -29,17 +30,21 @@ export async function inviteEmployeeAction(formData: {
   const hashedPassword = await hashPassword(demoPass);
 
   return withService(async (sql) => {
+    const encPhone = encryptField("profiles", "phone", formData.phone);
+    const phoneBidx = computeBlindIndex(formData.phone);
+
     const [emp] = await sql`
       INSERT INTO public.profiles (
-        email, full_name, role, phone, hourly_rate_paise, is_active
+        email, full_name, role, phone, phone_bidx, hourly_rate_paise, is_active
       ) VALUES (
         ${formData.email}, ${formData.fullName}, 'employee',
-        ${formData.phone || null}, ${formData.hourlyRatePaise}, true
+        ${encPhone}, ${phoneBidx}, ${formData.hourlyRatePaise}, true
       )
       ON CONFLICT (email) DO UPDATE SET
         full_name = EXCLUDED.full_name,
         role = 'employee',
         phone = EXCLUDED.phone,
+        phone_bidx = EXCLUDED.phone_bidx,
         hourly_rate_paise = EXCLUDED.hourly_rate_paise,
         is_active = true
       RETURNING id

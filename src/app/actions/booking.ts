@@ -4,6 +4,7 @@ import { FullBookingSubmissionSchema, type FullBookingSubmission } from "@/lib/v
 import { withService } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
+import { encryptField, computeBlindIndex } from "@/lib/crypto/field-encryption";
 import { sendEmail } from "@/lib/email/resend";
 import {
   renderEnquiryConfirmationEmail,
@@ -90,11 +91,14 @@ export async function createEnquiryAction(payload: unknown): Promise<BookingActi
         const demoPass = process.env.DEMO_PASSWORD || "ChangeMe-Demo#2026";
         const hashedPassword = await hashPassword(demoPass);
 
+        const encPhone = encryptField("profiles", "phone", data.contactPhone);
+        const phoneBidx = computeBlindIndex(data.contactPhone);
+
         const [newUser] = await sql`
           INSERT INTO public.profiles (
-            email, role, full_name, phone, is_active
+            email, role, full_name, phone, phone_bidx, is_active
           ) VALUES (
-            ${data.contactEmail}, 'client', ${data.contactName}, ${data.contactPhone || null}, true
+            ${data.contactEmail}, 'client', ${data.contactName}, ${encPhone}, ${phoneBidx}, true
           )
           RETURNING id
         `;
@@ -123,10 +127,13 @@ export async function createEnquiryAction(payload: unknown): Promise<BookingActi
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const enquiryCode = `ENQ-2026-${randomSuffix}`;
 
-    // 5. Idempotency Check
+    // 5. Idempotency Check using blind index
+    const emailBidx = computeBlindIndex(data.contactEmail);
+    const phoneBidx = computeBlindIndex(data.contactPhone);
+
     const [recentDuplicate] = await sql`
       SELECT id, code FROM public.enquiries
-      WHERE contact_email = ${data.contactEmail}
+      WHERE contact_email_bidx = ${emailBidx}
         AND preferred_start_date = ${data.preferredStartDate}
         AND guest_count = ${data.guestCount}
       ORDER BY created_at DESC
@@ -145,18 +152,22 @@ export async function createEnquiryAction(payload: unknown): Promise<BookingActi
       };
     }
 
-    // 6. Insert into enquiries
+    // 6. Encrypt sensitive enquiry fields at rest
+    const encContactEmail = encryptField("enquiries", "contact_email", data.contactEmail);
+    const encContactPhone = encryptField("enquiries", "contact_phone", data.contactPhone);
+    const encNotes = encryptField("enquiries", "notes", data.notes);
+
     const [insertedEnquiry] = await sql`
       INSERT INTO public.enquiries (
         code, client_id, source, type, package_id, city,
         preferred_start_date, preferred_end_date, guest_count,
         theme, budget_max_paise, custom_services, status,
-        contact_name, contact_email, contact_phone, notes
+        contact_name, contact_email, contact_phone, contact_email_bidx, contact_phone_bidx, notes
       ) VALUES (
         ${enquiryCode}, ${clientId}, 'website_wizard', ${data.type}, ${packageId}, ${data.city},
         ${data.preferredStartDate || null}, ${data.preferredEndDate || null}, ${data.guestCount},
         ${data.theme || null}, ${data.budgetMaxPaise}, ${sql.json(data.customServices || [])}, 'new',
-        ${data.contactName}, ${data.contactEmail}, ${data.contactPhone}, ${data.notes || null}
+        ${data.contactName}, ${encContactEmail}, ${encContactPhone}, ${emailBidx}, ${phoneBidx}, ${encNotes}
       )
       RETURNING id, code
     `;

@@ -1,5 +1,6 @@
 import { getSessionProfile } from "@/lib/auth/session";
 import { withUser } from "@/lib/db/with-user";
+import { decryptField } from "@/lib/crypto/field-encryption";
 import { ChatThread } from "@/components/features/chat/chat-thread";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export default async function ClientMessagesPage() {
       `;
 
       if (thread) {
-        messages = await sql`
+        const rawMessages = await sql`
           SELECT 
             m.id, 
             m.sender_id, 
@@ -42,6 +43,10 @@ export default async function ClientMessagesPage() {
           WHERE m.thread_id = ${thread.id}
           ORDER BY m.created_at ASC
         `;
+        messages = (rawMessages || []).map((m: any) => ({
+          ...m,
+          body: decryptField("messages", "body", m.body) || m.body,
+        }));
       }
     }
 

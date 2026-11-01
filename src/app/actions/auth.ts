@@ -17,6 +17,7 @@ import {
   type AuthChallenge,
   type SealedPayload,
 } from "@/lib/auth/seal";
+import { encryptField, computeBlindIndex } from "@/lib/crypto/field-encryption";
 import type { UserRole } from "@/types/database";
 
 const SignInSchema = z.object({
@@ -221,12 +222,14 @@ export async function signUpAction(
 
   try {
     const hashedPassword = await hashPassword(password);
+    const encPhone = encryptField("profiles", "phone", phone);
+    const phoneBidx = computeBlindIndex(phone);
 
     await withService(async (sql) => {
       // 1. Create profile (client role only)
       const [profile] = await sql`
-        INSERT INTO public.profiles (full_name, email, role, phone, is_active)
-        VALUES (${fullName}, ${email}, 'client', ${phone || null}, true)
+        INSERT INTO public.profiles (full_name, email, role, phone, phone_bidx, is_active)
+        VALUES (${fullName}, ${email}, 'client', ${encPhone}, ${phoneBidx}, true)
         RETURNING id
       `;
 
@@ -284,19 +287,22 @@ export async function inviteEmployeeAction(
   const { email, fullName, phone, hourlyRatePaise } = parsed.data;
   const tempPassword = process.env.DEMO_PASSWORD || "ChangeMe-Demo#2026";
   const hashedPassword = await hashPassword(tempPassword);
+  const encPhone = encryptField("profiles", "phone", phone);
+  const phoneBidx = computeBlindIndex(phone);
 
   const employeeId = await withService(async (sql) => {
     // 1. Insert or update employee profile
     const [emp] = await sql`
       INSERT INTO public.profiles (
-        email, full_name, role, phone, hourly_rate_paise, is_active
+        email, full_name, role, phone, phone_bidx, hourly_rate_paise, is_active
       ) VALUES (
-        ${email}, ${fullName}, 'employee', ${phone || null}, ${hourlyRatePaise}, true
+        ${email}, ${fullName}, 'employee', ${encPhone}, ${phoneBidx}, ${hourlyRatePaise}, true
       )
       ON CONFLICT (email) DO UPDATE SET
         full_name = EXCLUDED.full_name,
         role = 'employee',
         phone = EXCLUDED.phone,
+        phone_bidx = EXCLUDED.phone_bidx,
         hourly_rate_paise = EXCLUDED.hourly_rate_paise,
         is_active = true
       RETURNING id

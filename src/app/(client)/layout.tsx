@@ -18,6 +18,7 @@ export default async function ClientLayout({
   const clientNav = [
     { label: "Overview", href: "/client", icon: "🏰" },
     { label: "Requests", href: "/client/requests", icon: "📝" },
+    { label: "Proposal", href: "/client/proposal", icon: "📋" },
     { label: "Agreement", href: "/client/agreement", icon: "✍️" },
     { label: "Messages", href: "/client/messages", icon: "💬" },
   ];

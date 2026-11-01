@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { withUser } from "@/lib/db/with-user";
 import { getSessionProfile } from "@/lib/auth/session";
+import { encryptField } from "@/lib/crypto/field-encryption";
 import {
   UpdateTaskStageSchema,
   LogIncidentSchema,
@@ -271,9 +272,11 @@ export async function sendMessageAction(
         thread = newThread;
       }
 
+      const encBody = encryptField("messages", "body", body);
+
       await sql`
         INSERT INTO public.messages (thread_id, sender_id, body)
-        VALUES (${thread.id}, ${session.profile.id}, ${body})
+        VALUES (${thread.id}, ${session.profile.id}, ${encBody})
       `;
 
       await sql`
