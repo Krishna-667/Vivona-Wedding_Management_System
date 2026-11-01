@@ -8,17 +8,20 @@ import {
   getAuthChallengeAction,
   signInSealedAction,
   signInAction,
-  signInWithGoogleAction,
+  getGoogleAuthConfigAction,
 } from "@/app/actions/auth";
 import { sealCredentialsInBrowser } from "@/lib/auth/client-seal";
+import { GoogleAuthModal } from "@/components/auth/google-auth-modal";
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get("error");
+  const isGooglePrompt = searchParams.get("googleAuth") === "prompt";
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
+  const [showGoogleModal, setShowGoogleModal] = React.useState(isGooglePrompt);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(urlError);
 
   React.useEffect(() => {
@@ -26,6 +29,12 @@ function LoginForm() {
       setErrorMsg(urlError);
     }
   }, [urlError]);
+
+  React.useEffect(() => {
+    if (isGooglePrompt) {
+      setShowGoogleModal(true);
+    }
+  }, [isGooglePrompt]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -80,10 +89,24 @@ function LoginForm() {
     }
   };
 
-  const handleGoogleSignIn = () => {
+  const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     setErrorMsg(null);
-    window.location.href = "/api/auth/google";
+
+    try {
+      const cfg = await getGoogleAuthConfigAction();
+      if (cfg.ok && cfg.data.isConfigured) {
+        // Live Google OAuth credentials exist! Redirect directly to Google's official OAuth consent
+        window.location.href = "/api/auth/google";
+      } else {
+        // Open Google Authentication modal to enter Google email or configure keys
+        setGoogleLoading(false);
+        setShowGoogleModal(true);
+      }
+    } catch {
+      setGoogleLoading(false);
+      setShowGoogleModal(true);
+    }
   };
 
   return (
@@ -105,9 +128,9 @@ function LoginForm() {
           type="button"
           onClick={handleGoogleSignIn}
           disabled={googleLoading || loading}
-          className="w-full flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50"
+          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50 active:scale-[0.99]"
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
             <path
               fill="#4285F4"
               d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
@@ -139,7 +162,7 @@ function LoginForm() {
       </div>
 
       {errorMsg && (
-        <div className="p-3 text-xs rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-medium">
+        <div className="p-3.5 text-xs rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-medium animate-in fade-in">
           {errorMsg}
         </div>
       )}
@@ -157,7 +180,7 @@ function LoginForm() {
             required
             autoComplete="username"
             placeholder="e.g. admin@vivona.demo"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
           />
         </div>
 
@@ -177,14 +200,14 @@ function LoginForm() {
             required
             autoComplete="current-password"
             placeholder="••••••••••••"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
           />
         </div>
 
         <button
           type="submit"
           disabled={loading || googleLoading}
-          className="w-full rounded-xl bg-maroon px-4 py-3 text-sm font-medium text-ivory hover:bg-maroon-600 disabled:opacity-50 transition-colors shadow-sm flex items-center justify-center gap-2"
+          className="w-full min-h-[48px] rounded-xl bg-maroon px-4 py-3 text-sm font-semibold text-ivory hover:bg-maroon-600 disabled:opacity-50 transition-all shadow-sm flex items-center justify-center gap-2 active:scale-[0.99]"
         >
           {loading ? (
             <span className="inline-block animate-pulse">Sealing & Authenticating...</span>
@@ -202,6 +225,13 @@ function LoginForm() {
           </Link>
         </p>
       </div>
+
+      {/* Google Authentication Dialog */}
+      <GoogleAuthModal
+        isOpen={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        redirectTo="/client"
+      />
     </div>
   );
 }

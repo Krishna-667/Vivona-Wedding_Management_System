@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { withAuth, withService } from "@/lib/db/with-user";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { isAccountLocked, recordLoginAttempt } from "@/lib/auth/lockout";
@@ -125,10 +127,136 @@ export async function signInSealedAction(
 }
 
 /**
- * Google Sign-In Action
- * Directs browser to /api/auth/google which initiates Google OAuth 2.0 flow
- * or provisions client session locally.
+ * Inspect Google OAuth 2.0 configuration status
  */
+export async function getGoogleAuthConfigAction(): Promise<
+  ActionResponse<{
+    isConfigured: boolean;
+    clientId?: string;
+    redirectUri: string;
+  }>
+> {
+  const isConfigured = Boolean(
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_ID.trim().length > 0 &&
+    process.env.GOOGLE_CLIENT_SECRET &&
+    process.env.GOOGLE_CLIENT_SECRET.trim().length > 0
+  );
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  return {
+    ok: true,
+    data: {
+      isConfigured,
+      clientId: isConfigured ? process.env.GOOGLE_CLIENT_ID : undefined,
+      redirectUri: `${siteUrl}/api/auth/google/callback`,
+    },
+  };
+}
+
+/**
+ * Interactive Google Account Sign-In
+ * Provisions or links the verified Google email directly in public.profiles
+ * with strict role='client', invalidates previous sessions, and sets the authenticated session.
+ */
+export async function signInWithGoogleAccountAction(data: {
+  email: string;
+  fullName: string;
+  avatarUrl?: string;
+}): Promise<ActionResponse<{ role: UserRole; redirectTo: string }>> {
+  try {
+    const emailParsed = z
+      .string()
+      .email("Please enter a valid Google email address.")
+      .safeParse(data.email);
+    if (!emailParsed.success) {
+      return { ok: false, error: "Please enter a valid Google email address." };
+    }
+
+    const cleanEmail = data.email.toLowerCase().trim();
+    const cleanName = data.fullName.trim() || "Google Client";
+
+    const profile = await withService(async (sql) => {
+      let [existing] = await sql`
+        SELECT id, email, role, full_name, avatar_url
+        FROM public.profiles
+        WHERE LOWER(email) = LOWER(${cleanEmail})
+      `;
+
+      if (!existing) {
+        // Enforce Rule 0.3: Public/Google registration provisions client role only
+        [existing] = await sql`
+          INSERT INTO public.profiles (email, full_name, avatar_url, role, is_active)
+          VALUES (${cleanEmail}, ${cleanName}, ${data.avatarUrl || null}, 'client', true)
+          RETURNING id, email, role, full_name
+        `;
+      } else if (data.avatarUrl && !existing.avatar_url) {
+        await sql`
+          UPDATE public.profiles
+          SET avatar_url = ${data.avatarUrl}, updated_at = NOW()
+          WHERE id = ${existing.id}
+        `;
+      }
+
+      return existing;
+    });
+
+    await destroySession();
+    await createSession(profile.id);
+
+    return {
+      ok: true,
+      data: { role: "client", redirectTo: "/client" },
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to authenticate with Google account.";
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Configure live Google OAuth 2.0 credentials into environment
+ */
+export async function configureGoogleOAuthAction(data: {
+  clientId: string;
+  clientSecret: string;
+}): Promise<ActionResponse<{ message: string }>> {
+  try {
+    const cleanId = data.clientId.trim();
+    const cleanSecret = data.clientSecret.trim();
+    if (!cleanId || !cleanSecret) {
+      return { ok: false, error: "Both Client ID and Client Secret are required." };
+    }
+
+    process.env.GOOGLE_CLIENT_ID = cleanId;
+    process.env.GOOGLE_CLIENT_SECRET = cleanSecret;
+
+    const envPath = path.resolve(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      let content = fs.readFileSync(envPath, "utf-8");
+      if (content.includes("GOOGLE_CLIENT_ID=")) {
+        content = content.replace(/GOOGLE_CLIENT_ID=.*/, `GOOGLE_CLIENT_ID=${cleanId}`);
+      } else {
+        content += `\nGOOGLE_CLIENT_ID=${cleanId}`;
+      }
+      if (content.includes("GOOGLE_CLIENT_SECRET=")) {
+        content = content.replace(/GOOGLE_CLIENT_SECRET=.*/, `GOOGLE_CLIENT_SECRET=${cleanSecret}`);
+      } else {
+        content += `\nGOOGLE_CLIENT_SECRET=${cleanSecret}`;
+      }
+      fs.writeFileSync(envPath, content, "utf-8");
+    }
+
+    return {
+      ok: true,
+      data: { message: "Google OAuth credentials saved successfully!" },
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to save Google OAuth configuration.";
+    return { ok: false, error: message };
+  }
+}
+
 export async function signInWithGoogleAction(): Promise<
   ActionResponse<{ role: UserRole; redirectTo: string }>
 > {

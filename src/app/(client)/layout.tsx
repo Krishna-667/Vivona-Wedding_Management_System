@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/logo";
 import { getSessionProfile } from "@/lib/auth/session";
 import { signOutAction } from "@/app/actions/auth";
+import { ClientBottomNav } from "@/components/navigation/client-bottom-nav";
 
 export default async function ClientLayout({
   children,
@@ -50,9 +51,13 @@ export default async function ClientLayout({
 
           {/* Profile & Sign Out */}
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden md:block text-right">
-              <p className="text-xs font-semibold text-charcoal">{session.profile.full_name}</p>
-              <p className="text-[10px] text-charcoal/60">{session.user.email}</p>
+            <div className="text-right">
+              <p className="text-xs font-semibold text-charcoal truncate max-w-[140px] sm:max-w-none">
+                {session.profile.full_name}
+              </p>
+              <p className="hidden sm:block text-[10px] text-charcoal/60 truncate max-w-[180px]">
+                {session.user.email}
+              </p>
             </div>
             <form action={signOutAction}>
               <button
@@ -67,21 +72,10 @@ export default async function ClientLayout({
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 container py-6 sm:py-8 px-4 sm:px-6">{children}</main>
+      <main className="flex-1 container py-6 sm:py-8 px-4 sm:px-6 pb-28 md:pb-8">{children}</main>
 
       {/* Mobile Sticky Bottom Nav Bar (390px Native App Experience) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 border-t border-border/80 flex items-center justify-around py-2 px-1 backdrop-blur-md">
-        {clientNav.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="flex flex-col items-center gap-0.5 py-1 px-3 text-[10px] font-medium text-charcoal/75 hover:text-maroon active:scale-95 transition-all"
-          >
-            <span className="text-base">{item.icon}</span>
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
+      <ClientBottomNav />
 
       <footer className="hidden md:block border-t border-border/60 py-6 text-center text-xs text-charcoal/50">
         Vivona Wedding Planning · Client Concierge Desk

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/logo";
 import { getSessionProfile } from "@/lib/auth/session";
 import { signOutAction } from "@/app/actions/auth";
+import { EmployeeBottomNav } from "@/components/navigation/employee-bottom-nav";
 
 export default async function EmployeeLayout({
   children,
@@ -77,22 +78,11 @@ export default async function EmployeeLayout({
           </span>
         </header>
 
-        <main className="flex-1 p-4 sm:p-8 max-w-6xl mx-auto w-full">{children}</main>
+        <main className="flex-1 p-4 sm:p-8 max-w-6xl mx-auto w-full pb-28 md:pb-8">{children}</main>
       </div>
 
       {/* Mobile Sticky Bottom Nav (390px Mobile Ergonomics) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border/80 flex items-center justify-around py-2 px-1 backdrop-blur-md">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="flex flex-col items-center gap-0.5 py-1 px-2 text-[10px] font-medium text-charcoal/70 hover:text-maroon active:scale-95 transition-all"
-          >
-            <span className="text-base">{item.icon}</span>
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
+      <EmployeeBottomNav />
     </div>
   );
 }

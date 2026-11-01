@@ -29,7 +29,23 @@ export async function recordLoginAttempt(
   await withAuth(async (sql) => {
     await sql`
       INSERT INTO private.login_attempts (email, ip_address, success)
-      VALUES (${email}, ${ipAddress || null}, ${success})
+      VALUES (${email.toLowerCase().trim()}, ${ipAddress || null}, ${success})
+    `;
+    if (success) {
+      // Successful login resets previous failed attempts
+      await sql`
+        DELETE FROM private.login_attempts
+        WHERE LOWER(email) = LOWER(${email.toLowerCase().trim()})
+      `;
+    }
+  });
+}
+
+export async function clearLoginAttempts(email: string): Promise<void> {
+  await withAuth(async (sql) => {
+    await sql`
+      DELETE FROM private.login_attempts
+      WHERE LOWER(email) = LOWER(${email.toLowerCase().trim()})
     `;
   });
 }

@@ -4,6 +4,7 @@ import { Logo } from "@/components/ui/logo";
 import { getSessionProfile } from "@/lib/auth/session";
 import { signOutAction } from "@/app/actions/auth";
 import { AdminMobileNav } from "@/components/navigation/admin-mobile-nav";
+import { AdminBottomNav } from "@/components/navigation/admin-bottom-nav";
 
 export default async function AdminLayout({
   children,
@@ -112,8 +113,11 @@ export default async function AdminLayout({
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-28 lg:pb-8">{children}</main>
       </div>
+
+      {/* Sticky Mobile Bottom Navigation for Quick One-Handed Command */}
+      <AdminBottomNav />
     </div>
   );
 }

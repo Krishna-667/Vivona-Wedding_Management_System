@@ -66,6 +66,13 @@
     touch-action: manipulation;
   }
 
+  /* Prevent iOS Safari from auto-zooming when focusing on inputs */
+  @media (max-width: 640px) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+  }
+
   /* Accessible focus states */
   :focus-visible {
     @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
@@ -74,5 +81,10 @@
   /* Text selection highlight with antique gold tint */
   ::selection {
     @apply bg-accent/25 text-foreground;
+  }
+
+  /* Safe Area Inset Utility for modern smartphones */
+  .safe-bottom-pad {
+    padding-bottom: max(5rem, calc(4rem + env(safe-area-inset-bottom)));
   }
 }

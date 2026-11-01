@@ -94,7 +94,7 @@ export function ChatThread({
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-sm flex flex-col h-[650px] overflow-hidden">
+    <div className="rounded-2xl border border-border bg-card shadow-sm flex flex-col h-[calc(100dvh-220px)] sm:h-[650px] overflow-hidden">
       {/* Header */}
       <div className="p-4 sm:p-5 border-b border-border/80 flex items-center justify-between bg-ivory-100/50">
         <div>

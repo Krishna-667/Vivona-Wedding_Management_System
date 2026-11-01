@@ -107,7 +107,13 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    // Should redirect through Google Auth and land on /client
+    // The Google auth dialog opens when live keys are not configured
+    const modalInput = page.locator('input[placeholder*="@gmail.com"]');
+    await expect(modalInput).toBeVisible({ timeout: 5000 });
+    await modalInput.fill("prithitha24it@psnacet.edu.in");
+    await page.click("button:has-text('Continue to Client Portal')");
+
+    // Should redirect and land on /client
     await page.waitForURL("**/client**", { timeout: 10000 });
     await expect(page.locator("main")).toBeVisible();
   });
@@ -118,7 +124,12 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
 
-    // Should redirect through Google Auth and land on /client
+    const modalInput = page.locator('input[placeholder*="@gmail.com"]');
+    await expect(modalInput).toBeVisible({ timeout: 5000 });
+    await modalInput.fill("client.google@gmail.com");
+    await page.click("button:has-text('Continue to Client Portal')");
+
+    // Should redirect and land on /client
     await page.waitForURL("**/client**", { timeout: 10000 });
     await expect(page.locator("main")).toBeVisible();
   });

@@ -47,13 +47,13 @@ export default async function ClientDashboardPage() {
 
         <div className="relative">
           <div className="hidden md:block absolute top-1/2 left-0 right-0 h-0.5 bg-border -translate-y-1/2 z-0" />
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3 relative z-10">
+          <div className="flex md:grid md:grid-cols-8 overflow-x-auto pb-2 gap-4 sm:gap-3 relative z-10 scrollbar-none">
             {timelineSteps.map((step, idx) => {
               const isCompleted = step.status === "completed";
               const isCurrent = step.status === "current";
 
               return (
-                <div key={step.label} className="flex flex-col items-center text-center">
+                <div key={step.label} className="flex flex-col items-center text-center min-w-[72px] sm:min-w-0 shrink-0">
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-all shadow-sm ${
                       isCompleted
@@ -66,8 +66,8 @@ export default async function ClientDashboardPage() {
                     {idx + 1}
                   </div>
                   <span
-                    className={`text-xs mt-2 font-medium ${
-                      isCompleted || isCurrent ? "text-charcoal" : "text-charcoal/40"
+                    className={`text-[11px] sm:text-xs mt-2 font-medium truncate max-w-[80px] sm:max-w-none ${
+                      isCompleted || isCurrent ? "text-charcoal font-semibold" : "text-charcoal/40"
                     }`}
                   >
                     {step.label}

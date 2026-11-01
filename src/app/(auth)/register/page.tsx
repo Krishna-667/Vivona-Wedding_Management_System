@@ -4,7 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { signUpAction } from "@/app/actions/auth";
+import { signUpAction, getGoogleAuthConfigAction } from "@/app/actions/auth";
+import { GoogleAuthModal } from "@/components/auth/google-auth-modal";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function RegisterPage() {
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
+  const [showGoogleModal, setShowGoogleModal] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -45,10 +47,22 @@ export default function RegisterPage() {
     }
   };
 
-  const handleGoogleSignUp = () => {
+  const handleGoogleSignUp = async () => {
     setGoogleLoading(true);
     setErrorMsg(null);
-    window.location.href = "/api/auth/google?redirectTo=/client";
+
+    try {
+      const cfg = await getGoogleAuthConfigAction();
+      if (cfg.ok && cfg.data.isConfigured) {
+        window.location.href = "/api/auth/google?redirectTo=/client";
+      } else {
+        setGoogleLoading(false);
+        setShowGoogleModal(true);
+      }
+    } catch {
+      setGoogleLoading(false);
+      setShowGoogleModal(true);
+    }
   };
 
   return (
@@ -71,9 +85,9 @@ export default function RegisterPage() {
           type="button"
           onClick={handleGoogleSignUp}
           disabled={googleLoading || loading}
-          className="w-full flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50"
+          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50 active:scale-[0.99]"
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
             <path
               fill="#4285F4"
               d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
@@ -105,7 +119,7 @@ export default function RegisterPage() {
       </div>
 
       {errorMsg && (
-        <div className="p-3 text-xs rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-medium">
+        <div className="p-3 text-xs rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-medium animate-in fade-in">
           {errorMsg}
         </div>
       )}
@@ -120,8 +134,8 @@ export default function RegisterPage() {
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             required
-            placeholder="e.g. Rohan & Priyamvada"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="e.g. Priyamvada & Rohan"
+            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
           />
         </div>
 
@@ -134,44 +148,50 @@ export default function RegisterPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            placeholder="e.g. couple@domain.com"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary"
+            autoComplete="email"
+            placeholder="e.g. couple@example.com"
+            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
           />
         </div>
 
         <div>
           <label className="block text-xs font-medium text-charcoal/80 mb-1">
-            Mobile Number (WhatsApp Preferred)
+            Phone Number (Encrypted at rest)
           </label>
           <input
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+91 98290 00000"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="+91 98765 43210"
+            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
           />
         </div>
 
         <div>
           <label className="block text-xs font-medium text-charcoal/80 mb-1">
-            Password (at least 6 characters)
+            Password (min 6 characters)
           </label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            autoComplete="new-password"
             placeholder="••••••••••••"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
           />
         </div>
 
         <button
           type="submit"
           disabled={loading || googleLoading}
-          className="w-full rounded-xl bg-maroon px-4 py-3 text-sm font-medium text-ivory hover:bg-maroon-600 disabled:opacity-50 transition-colors shadow-sm flex items-center justify-center gap-2"
+          className="w-full min-h-[48px] rounded-xl bg-maroon px-4 py-3 text-sm font-semibold text-ivory hover:bg-maroon-600 disabled:opacity-50 transition-all shadow-sm flex items-center justify-center gap-2 active:scale-[0.99]"
         >
-          {loading ? "Creating Account..." : "Register Client Account"}
+          {loading ? (
+            <span className="inline-block animate-pulse">Creating Account...</span>
+          ) : (
+            <span>Create Client Account</span>
+          )}
         </button>
       </form>
 
@@ -179,10 +199,17 @@ export default function RegisterPage() {
         <p className="text-xs text-charcoal/70">
           Already have an account?{" "}
           <Link href="/login" className="text-maroon font-semibold hover:underline">
-            Sign In here
+            Sign In
           </Link>
         </p>
       </div>
+
+      {/* Google Authentication Dialog */}
+      <GoogleAuthModal
+        isOpen={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        redirectTo="/client"
+      />
     </div>
   );
 }
