@@ -11,7 +11,7 @@ export default function RegisterPage() {
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [phone, setPhone] = React.useState("");
-  const [password, setPassword] = React.useState("");
+  const passwordRef = React.useRef<HTMLInputElement>(null);
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
@@ -21,11 +21,18 @@ export default function RegisterPage() {
     setLoading(true);
     setErrorMsg(null);
 
+    const password = passwordRef.current?.value || "";
+
     const formData = new FormData();
     formData.append("fullName", fullName);
     formData.append("email", email);
     formData.append("phone", phone);
     formData.append("password", password);
+
+    // Immediately clear password input from memory
+    if (passwordRef.current) {
+      passwordRef.current.value = "";
+    }
 
     try {
       const res = await signUpAction(formData);
@@ -173,9 +180,9 @@ export default function RegisterPage() {
             Password (Min 8 Characters)
           </label>
           <input
+            ref={passwordRef}
             type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            name="password"
             required
             minLength={8}
             placeholder="••••••••••••"

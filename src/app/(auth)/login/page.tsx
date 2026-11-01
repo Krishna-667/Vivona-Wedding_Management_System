@@ -26,7 +26,7 @@ function LoginForm() {
   const urlError = searchParams.get("error");
   const redirectTo = searchParams.get("redirectTo") || "/client";
   const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
+  const passwordRef = React.useRef<HTMLInputElement>(null);
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(
@@ -43,6 +43,8 @@ function LoginForm() {
     e.preventDefault();
     setErrorMsg(null);
     setLoading(true);
+
+    const password = passwordRef.current?.value || "";
 
     try {
       let res;
@@ -63,6 +65,11 @@ function LoginForm() {
           challengeRes.data
         );
 
+        // Wipe plaintext password from DOM element immediately after encryption
+        if (passwordRef.current) {
+          passwordRef.current.value = "";
+        }
+
         // 3. Submit sealed payload
         res = await signInSealedAction(sealed);
       } else {
@@ -70,6 +77,9 @@ function LoginForm() {
         const formData = new FormData();
         formData.append("email", cleanEmail);
         formData.append("password", password);
+        if (passwordRef.current) {
+          passwordRef.current.value = "";
+        }
         res = await signInAction(formData);
       }
 
@@ -196,12 +206,9 @@ function LoginForm() {
             </span>
           </div>
           <input
+            ref={passwordRef}
             type="password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              if (errorMsg) setErrorMsg(null);
-            }}
+            name="password"
             required
             autoComplete="current-password"
             placeholder="••••••••••••"
