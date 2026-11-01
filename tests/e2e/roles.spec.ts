@@ -101,7 +101,7 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     expect(page.url()).toContain("redirectTo");
   });
 
-  test("6. Continue with Google from Login screen", async ({ page }) => {
+  test("6. Admin signs in with Google and lands on Admin Executive Desk", async ({ page }) => {
     await page.goto("http://localhost:3000/login");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
@@ -111,15 +111,47 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
     await expect(page.locator("text=Choose an account")).toBeVisible();
 
-    const prithithCard = page.locator("button:has-text('Prithith')");
-    await expect(prithithCard).toBeVisible();
-    await prithithCard.click();
+    // Select Admin account
+    const adminCard = page.locator("button:has-text('Devraj Rathore')");
+    await expect(adminCard).toBeVisible();
+    await adminCard.click();
 
-    await page.waitForURL("**/client**", { timeout: 10000 });
+    // Enter verified password
+    const passwordInput = page.locator('input[type="password"]');
+    await expect(passwordInput).toBeVisible();
+    await passwordInput.fill("ChangeMe-Demo#2026");
+    await page.click("button:has-text('Sign In with Google')");
+
+    // Routes directly to /admin based on admin role
+    await page.waitForURL("**/admin**", { timeout: 10000 });
     await expect(page.locator("main")).toBeVisible();
   });
 
-  test("7. Continue with Google from Register screen", async ({ page }) => {
+  test("7. Employee signs in with Google and lands on Operations Desk", async ({ page }) => {
+    await page.goto("http://localhost:3000/login");
+    const googleBtn = page.locator("button:has-text('Continue with Google')");
+    await expect(googleBtn).toBeVisible();
+    await googleBtn.click();
+
+    await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
+    await expect(page.locator("text=Choose an account")).toBeVisible();
+
+    // Select Employee account
+    const employeeCard = page.locator("button:has-text('Ananya Sharma')");
+    await expect(employeeCard).toBeVisible();
+    await employeeCard.click();
+
+    const passwordInput = page.locator('input[type="password"]');
+    await expect(passwordInput).toBeVisible();
+    await passwordInput.fill("ChangeMe-Demo#2026");
+    await page.click("button:has-text('Sign In with Google')");
+
+    // Routes directly to /employee based on employee role
+    await page.waitForURL("**/employee**", { timeout: 10000 });
+    await expect(page.locator("main")).toBeVisible();
+  });
+
+  test("8. Client signs in with Google and lands on Client Wedding Portal", async ({ page }) => {
     await page.goto("http://localhost:3000/register");
     const googleBtn = page.locator("button:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
@@ -128,10 +160,17 @@ test.describe("Vivona 3-Role Journey & Navigation Verification", () => {
     await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
     await expect(page.locator("text=Choose an account")).toBeVisible();
 
+    // Select Client account
     const prithithCard = page.locator("button:has-text('Prithith')");
     await expect(prithithCard).toBeVisible();
     await prithithCard.click();
 
+    const passwordInput = page.locator('input[type="password"]');
+    await expect(passwordInput).toBeVisible();
+    await passwordInput.fill("ChangeMe-Demo#2026");
+    await page.click("button:has-text('Sign In with Google')");
+
+    // Routes directly to /client
     await page.waitForURL("**/client**", { timeout: 10000 });
     await expect(page.locator("main")).toBeVisible();
   });
