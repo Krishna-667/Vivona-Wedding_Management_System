@@ -30,10 +30,6 @@ async function verifyTurnstileToken(token?: string): Promise<boolean> {
   const secretKey =
     process.env.TURNSTILE_SECRET_KEY || "1x0000000000000000000000000000000AA";
 
-  if (token === "dev-bypass-token" && process.env.NODE_ENV !== "production") {
-    return true;
-  }
-
   try {
     const res = await fetch(
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",

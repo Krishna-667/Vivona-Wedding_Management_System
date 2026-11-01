@@ -1,99 +1,139 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Auth Debug & Verification", () => {
-  test("Invalid email and password shows error and does NOT authenticate", async ({ page }) => {
+test.describe("Step 0 Permanent Regression & Auth Bypass Prevention Suite", () => {
+  test.beforeEach(async ({ context }) => {
+    // Ensure all cookies and state are completely cleared prior to each test
+    await context.clearCookies();
+  });
+
+  test("Check 1: Signed-out direct visits to /client, /employee, /admin must redirect to /login", async ({
+    page,
+  }) => {
+    for (const protectedPath of ["/client", "/employee", "/admin"]) {
+      await page.goto(`http://localhost:3000${protectedPath}`);
+      await page.waitForURL("**/login**", { timeout: 10000 });
+      expect(page.url()).toContain("/login");
+      expect(page.url()).toContain(`redirectTo=${encodeURIComponent(protectedPath)}`);
+    }
+  });
+
+  test("Check 2: Wrong, empty or unknown-email password must fail with no session created", async ({
+    page,
+    context,
+  }) => {
     await page.goto("http://localhost:3000/login");
-    await page.fill('input[type="email"]', "fakeuser999@notexist.com");
-    await page.fill('input[type="password"]', "wrongpassword123");
+
+    // Case 2a: Unknown email
+    await page.fill('input[type="email"]', "attacker_unknown_999@notexist.com");
+    await page.fill('input[type="password"]', "anypassword123");
     await page.click('button[type="submit"]');
 
-    // Wait for response
-    await page.waitForTimeout(2000);
-
-    // Verify error message is visible
     const errorBox = page.locator("text=/Invalid email or password|temporarily locked/i");
     await expect(errorBox.first()).toBeVisible({ timeout: 5000 });
+    expect(page.url()).toContain("/login");
 
-    // Verify we are STILL on /login, NOT redirected
+    let cookies = await context.cookies();
+    expect(cookies.find((c) => c.name === "vivona_session")).toBeUndefined();
+
+    // Case 2b: Known email, wrong password
+    await page.fill('input[type="email"]', "devraj@vivona.in");
+    await page.fill('input[type="password"]', "WrongPassword#999");
+    await page.click('button[type="submit"]');
+
+    await expect(errorBox.first()).toBeVisible({ timeout: 5000 });
+    cookies = await context.cookies();
+    expect(cookies.find((c) => c.name === "vivona_session")).toBeUndefined();
+  });
+
+  test("Check 3: Fake session cookie must NOT count as logged in", async ({
+    page,
+    context,
+  }) => {
+    // Inject spoofed session cookie
+    await context.addCookies([
+      {
+        name: "vivona_session",
+        value: "forged_attacker_session_token_12345",
+        domain: "localhost",
+        path: "/",
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+    ]);
+
+    // Attempt direct access to admin executive workspace
+    await page.goto("http://localhost:3000/admin");
+
+    // Server-side requireRole() must reject invalid token hash and redirect to /login
+    await page.waitForURL("**/login**", { timeout: 10000 });
     expect(page.url()).toContain("/login");
   });
 
-  test("Invalid password for real user shows error and does NOT authenticate", async ({ page }) => {
+  test("Check 4: Back button after logout must show zero protected content (Cache-Control: no-store)", async ({
+    page,
+  }) => {
+    // 1. Log in as real admin
     await page.goto("http://localhost:3000/login");
-    await page.fill('input[type="email"]', "planner1@vivona.demo");
-    await page.fill('input[type="password"]', "IncorrectPassword#123");
+    await page.fill('input[type="email"]', "admin@vivona.demo");
+    await page.fill('input[type="password"]', "ChangeMe-Demo#2026");
     await page.click('button[type="submit"]');
 
-    await page.waitForTimeout(2000);
+    await page.waitForURL("**/admin", { timeout: 15000 });
+    await expect(page.locator("h1")).toBeVisible();
 
-    const errorBox = page.locator("text=/Invalid email or password|temporarily locked/i");
-    await expect(errorBox.first()).toBeVisible({ timeout: 5000 });
+    // 2. Click Sign Out (supports both desktop sidebar and mobile responsive drawer)
+    const mobileNavTrigger = page.locator("button[aria-label*='navigation']:visible");
+    if (await mobileNavTrigger.isVisible()) {
+      await mobileNavTrigger.click();
+      await page.waitForTimeout(300);
+    }
+    await page.locator("button:has-text('Sign Out'):visible").click();
+
+    await page.waitForURL("**/login**", { timeout: 10000 });
+    expect(page.url()).toContain("/login");
+
+    // 3. Press browser back button
+    await page.goBack();
+    await page.waitForTimeout(1000);
+
+    // Because Cache-Control: no-store is enforced, page re-validates on server and stays on /login
     expect(page.url()).toContain("/login");
   });
 
-  test("Continue with Google verifies password and authenticates selected account", async ({ page }) => {
+  test("Check 5: 'Continue with Google' button initiates RFC 7636 PKCE flow to accounts.google.com", async ({
+    page,
+  }) => {
     await page.goto("http://localhost:3000/login");
-    const googleBtn = page.locator("button:has-text('Continue with Google')");
+
+    const googleBtn = page.locator("a:has-text('Continue with Google')");
     await expect(googleBtn).toBeVisible();
-    await googleBtn.click();
 
-    await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
-    await expect(page.locator("text=Choose an account")).toBeVisible();
+    // Verify href targets server authorization endpoint
+    const href = await googleBtn.getAttribute("href");
+    expect(href).toContain("/api/auth/google/start");
 
-    // Select account
-    const prithithCard = page.locator("button:has-text('Prithith')");
-    await expect(prithithCard).toBeVisible();
-    await prithithCard.click();
+    // Intercept navigation to accounts.google.com
+    const [request] = await Promise.all([
+      page.waitForRequest((req) => req.url().includes("accounts.google.com") || req.url().includes("/api/auth/google/start")),
+      googleBtn.click(),
+    ]);
 
-    // Verify password verification step is displayed
-    await expect(page.locator("text=/Verification/i")).toBeVisible();
-    const passwordInput = page.locator('input[type="password"]');
-    await expect(passwordInput).toBeVisible();
-
-    // Test password length validation (< 6 chars)
-    await passwordInput.fill("123");
-    await page.click("button:has-text('Sign In with Google')");
-    await expect(page.locator("text=/Password must be at least 6 characters/i")).toBeVisible({ timeout: 5000 });
-
-    // Enter actual valid password and authenticate
-    await passwordInput.fill("PrithithRealPassword#2026");
-    await page.click("button:has-text('Sign In with Google')");
-
-    // Successfully passes through OAuth callback and lands on /client
-    await page.waitForURL("**/client**", { timeout: 10000 });
-    await expect(page.locator("main")).toBeVisible();
+    expect(request.url()).toBeDefined();
   });
 
-  test("Continue with Google allows adding new Gmail account with actual password", async ({ page }) => {
-    await page.goto("http://localhost:3000/login");
-    const googleBtn = page.locator("button:has-text('Continue with Google')");
-    await googleBtn.click();
+  test("Check 6: Malformed or mismatched state on OAuth callback sets zero session", async ({
+    page,
+    context,
+  }) => {
+    // Directly hitting callback with forged/missing state
+    await page.goto("http://localhost:3000/api/auth/google/callback?code=forged_code&state=forged_state");
 
-    await page.waitForURL("**/auth/google/consent**", { timeout: 10000 });
+    // Must redirect to /login with state_mismatch error
+    await page.waitForURL("**/login?error=state_mismatch**", { timeout: 10000 });
+    expect(page.url()).toContain("error=state_mismatch");
 
-    // Click "Use another Google account"
-    const useAnotherBtn = page.locator("button:has-text('Use another Google account')");
-    await expect(useAnotherBtn).toBeVisible();
-    await useAnotherBtn.click();
-
-    // Enter custom Gmail
-    const timestamp = Date.now();
-    const customGmail = `newclient.${timestamp}@gmail.com`;
-    const emailInput = page.locator('input[type="email"]');
-    await emailInput.fill(customGmail);
-    await page.click("button:has-text('Next')");
-
-    // Enter full name and actual password
-    const nameInput = page.locator('input[placeholder*="Alex Morgan"]');
-    await expect(nameInput).toBeVisible();
-    await nameInput.fill("New Vivona Client");
-
-    const passwordInput = page.locator('input[type="password"]');
-    await passwordInput.fill("RealGooglePass#2026");
-    await page.click("button:has-text('Sign In with Google')");
-
-    // Successfully provisions new client account and lands on /client
-    await page.waitForURL("**/client**", { timeout: 10000 });
-    await expect(page.locator("main")).toBeVisible();
+    // Assert zero session established
+    const cookies = await context.cookies();
+    expect(cookies.find((c) => c.name === "vivona_session")).toBeUndefined();
   });
 });

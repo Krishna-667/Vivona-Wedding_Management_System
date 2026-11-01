@@ -11,6 +11,16 @@ import {
 } from "@/app/actions/auth";
 import { sealCredentialsInBrowser } from "@/lib/auth/client-seal";
 
+const ERROR_MESSAGES: Record<string, string> = {
+  google_denied: "Google sign-in was cancelled or access was denied.",
+  state_mismatch: "Authentication session expired or security verification failed. Please try again.",
+  email_unverified: "Your Google email address is not verified. Please verify your email with Google first.",
+  account_disabled: "This account has been deactivated. Please contact support.",
+  identity_conflict: "This email is already associated with a different Google account.",
+  provider_error: "Google authentication service encountered a temporary error. Please try again.",
+  unauthorized: "You do not have permission to access that area. Please sign in.",
+};
+
 function LoginForm() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get("error");
@@ -19,11 +29,13 @@ function LoginForm() {
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(urlError);
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(
+    urlError ? (ERROR_MESSAGES[urlError] || urlError) : null
+  );
 
   React.useEffect(() => {
     if (urlError) {
-      setErrorMsg(urlError);
+      setErrorMsg(ERROR_MESSAGES[urlError] || urlError);
     }
   }, [urlError]);
 
@@ -80,13 +92,6 @@ function LoginForm() {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    setGoogleLoading(true);
-    setErrorMsg(null);
-    // Standard OAuth 2.0 flow: navigates to server auth route, which redirects to accounts.google.com
-    window.location.href = `/api/auth/google?redirectTo=${encodeURIComponent(redirectTo)}`;
-  };
-
   return (
     <div className="space-y-6">
       <div className="text-center space-y-2">
@@ -100,15 +105,17 @@ function LoginForm() {
         </p>
       </div>
 
-      {/* Google Sign-In Option */}
+      {/* Google Sign-In Option (Plain GET link, full width at 390px, standard Google mark) */}
       <div>
-        <button
-          type="button"
-          onClick={handleGoogleSignIn}
-          disabled={googleLoading || loading}
-          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50 active:scale-[0.99] cursor-pointer"
+        <a
+          href={`/api/auth/google/start?returnTo=${encodeURIComponent(redirectTo)}`}
+          onClick={() => {
+            setGoogleLoading(true);
+            setErrorMsg(null);
+          }}
+          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs active:scale-[0.99] cursor-pointer"
         >
-          <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
             <path
               fill="#4285F4"
               d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
@@ -127,7 +134,7 @@ function LoginForm() {
             />
           </svg>
           <span>{googleLoading ? "Connecting to Google..." : "Continue with Google"}</span>
-        </button>
+        </a>
 
         <div className="relative my-4">
           <div className="absolute inset-0 flex items-center">
@@ -158,10 +165,10 @@ function LoginForm() {
         </div>
       )}
 
-      {/* Encrypted Password Form */}
+      {/* Form Credentials */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-charcoal/80 mb-1">
+          <label className="block text-xs font-medium text-charcoal mb-1">
             Email Address
           </label>
           <input
@@ -172,19 +179,20 @@ function LoginForm() {
               if (errorMsg) setErrorMsg(null);
             }}
             required
-            autoComplete="username"
-            placeholder="e.g. devraj@vivona.in or your email"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
+            autoComplete="email"
+            placeholder="e.g. devraj@vivona.in"
+            className="w-full rounded-xl border border-border bg-card px-3.5 py-2.5 text-sm text-charcoal focus:border-maroon focus:ring-1 focus:ring-maroon outline-none transition-colors"
           />
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="block text-xs font-medium text-charcoal/80">
+            <label className="block text-xs font-medium text-charcoal">
               Password
             </label>
-            <span className="text-[10px] text-sage-700 font-mono">
-              🛡️ RSA-OAEP Sealed
+            <span className="text-[10px] text-charcoal/50 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              RSA-OAEP Sealed
             </span>
           </div>
           <input
@@ -197,30 +205,24 @@ function LoginForm() {
             required
             autoComplete="current-password"
             placeholder="••••••••••••"
-            className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-base sm:text-sm text-foreground placeholder:text-charcoal/40 focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
+            className="w-full rounded-xl border border-border bg-card px-3.5 py-2.5 text-sm text-charcoal focus:border-maroon focus:ring-1 focus:ring-maroon outline-none transition-colors"
           />
         </div>
 
         <button
           type="submit"
           disabled={loading || googleLoading}
-          className="w-full min-h-[48px] rounded-xl bg-maroon px-4 py-3 text-sm font-semibold text-ivory hover:bg-maroon-600 disabled:opacity-50 transition-all shadow-sm flex items-center justify-center gap-2 active:scale-[0.99] cursor-pointer"
+          className="w-full rounded-xl bg-maroon py-3 text-xs sm:text-sm font-semibold text-ivory hover:bg-maroon-600 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
         >
-          {loading ? (
-            <span className="inline-block animate-pulse">Sealing & Authenticating...</span>
-          ) : (
-            <span>Sign In to Vivona</span>
-          )}
+          {loading ? "Decrypting Security Challenge & Verifying..." : "Sign In to Vivona"}
         </button>
       </form>
 
-      <div className="text-center pt-2 border-t border-border/60">
-        <p className="text-xs text-charcoal/70">
-          First time booking a wedding?{" "}
-          <Link href="/register" className="text-maroon font-semibold hover:underline">
-            Create Client Account
-          </Link>
-        </p>
+      <div className="text-center text-xs text-charcoal/60 pt-2 border-t border-border/80">
+        New couple or client?{" "}
+        <Link href="/register" className="font-semibold text-maroon hover:underline">
+          Register client account
+        </Link>
       </div>
     </div>
   );
@@ -230,8 +232,8 @@ export default function LoginPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="p-8 text-center text-xs text-charcoal/60 animate-pulse">
-          Loading Vivona secure sign-in...
+        <div className="p-8 text-center text-xs text-charcoal/50">
+          Loading sign in portal...
         </div>
       }
     >

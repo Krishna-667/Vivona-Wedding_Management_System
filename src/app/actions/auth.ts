@@ -155,7 +155,7 @@ export async function getGoogleAuthConfigAction(): Promise<
 export async function signInWithGoogleAction(): Promise<
   ActionResponse<{ role: UserRole; redirectTo: string }>
 > {
-  return { ok: true, data: { role: "client", redirectTo: "/api/auth/google" } };
+  return { ok: true, data: { role: "client", redirectTo: "/api/auth/google/start" } };
 }
 
 export async function signInAction(

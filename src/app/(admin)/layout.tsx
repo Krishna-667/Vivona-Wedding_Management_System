@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/logo";
-import { getSessionProfile } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/permissions";
 import { signOutAction } from "@/app/actions/auth";
 import { AdminMobileNav } from "@/components/navigation/admin-mobile-nav";
 import { AdminBottomNav } from "@/components/navigation/admin-bottom-nav";
@@ -12,11 +11,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSessionProfile();
-
-  if (!session || session.profile.role !== "admin") {
-    redirect("/login");
-  }
+  const session = await requireRole(["admin"]);
 
   const adminNav = [
     { label: "Executive Dashboard", href: "/admin", icon: "🏛️" },

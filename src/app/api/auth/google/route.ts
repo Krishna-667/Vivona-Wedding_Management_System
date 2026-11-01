@@ -1,91 +1,12 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { randomBytes, createHash } from "node:crypto";
-import { isCookieSecure } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
-function getRequestOrigin(request: Request): string {
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
-  const proto =
-    request.headers.get("x-forwarded-proto") ||
-    (host && !host.includes("localhost") && !host.includes("127.0.0.1") ? "https" : "http");
-  if (host) {
-    return `${proto}://${host}`;
-  }
-  return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-}
-
 /**
- * Initiates the Google OAuth 2.0 flow.
- * If live Google Cloud Console credentials exist in .env.local, redirects to accounts.google.com.
- * If running locally without cloud credentials, routes seamlessly to the authentic Google Accounts consent screen.
+ * Redirects legacy /api/auth/google to /api/auth/google/start
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const origin = getRequestOrigin(request);
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  const redirectTo = url.searchParams.get("redirectTo") || "/client";
-
-  const cookieStore = cookies();
-  const secure = isCookieSecure();
-
-  // 1. Generate CSRF state token
-  const state = randomBytes(24).toString("hex");
-
-  // 2. Generate PKCE code verifier and code challenge (RFC 7636)
-  const codeVerifier = randomBytes(32).toString("base64url");
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-
-  // 3. Save state, PKCE verifier, and intended redirect in secure HTTP-only cookies
-  cookieStore.set("google_oauth_state", state, {
-    httpOnly: true,
-    secure,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 10,
-  });
-
-  cookieStore.set("google_oauth_verifier", codeVerifier, {
-    httpOnly: true,
-    secure,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 10,
-  });
-
-  cookieStore.set("google_oauth_redirect", redirectTo, {
-    httpOnly: true,
-    secure,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 10,
-  });
-
-  const redirectUri = `${origin}/api/auth/google/callback`;
-
-  // 4a. Live Google Cloud OAuth (when credentials are set in .env.local)
-  if (clientId && clientSecret) {
-    const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    googleAuthUrl.searchParams.set("client_id", clientId);
-    googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
-    googleAuthUrl.searchParams.set("response_type", "code");
-    googleAuthUrl.searchParams.set("scope", "openid email profile");
-    googleAuthUrl.searchParams.set("state", state);
-    googleAuthUrl.searchParams.set("code_challenge", codeChallenge);
-    googleAuthUrl.searchParams.set("code_challenge_method", "S256");
-    googleAuthUrl.searchParams.set("access_type", "offline");
-    googleAuthUrl.searchParams.set("prompt", "select_account");
-
-    return NextResponse.redirect(googleAuthUrl.toString());
-  }
-
-  // 4b. Local Google Accounts Consent flow
-  const consentUrl = new URL("/auth/google/consent", origin);
-  consentUrl.searchParams.set("state", state);
-  consentUrl.searchParams.set("code_challenge", codeChallenge);
-  consentUrl.searchParams.set("redirect_uri", redirectUri);
-
-  return NextResponse.redirect(consentUrl.toString());
+  url.pathname = "/api/auth/google/start";
+  return NextResponse.redirect(url);
 }

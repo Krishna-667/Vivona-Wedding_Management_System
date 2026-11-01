@@ -66,15 +66,17 @@ export default function RegisterPage() {
         <p>Public sign-ups grant <strong>Client</strong> access. Planner and Admin accounts are assigned strictly by invitation.</p>
       </div>
 
-      {/* Continue with Google */}
+      {/* Continue with Google (Plain GET Link) */}
       <div>
-        <button
-          type="button"
-          onClick={handleGoogleSignUp}
-          disabled={googleLoading || loading}
-          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs disabled:opacity-50 active:scale-[0.99] cursor-pointer"
+        <a
+          href="/api/auth/google/start?returnTo=/client"
+          onClick={() => {
+            setGoogleLoading(true);
+            setErrorMsg(null);
+          }}
+          className="w-full min-h-[48px] flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs sm:text-sm font-semibold text-charcoal hover:bg-ivory-200/50 hover:border-gold-400/50 transition-all shadow-xs active:scale-[0.99] cursor-pointer"
         >
-          <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
             <path
               fill="#4285F4"
               d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
@@ -93,7 +95,7 @@ export default function RegisterPage() {
             />
           </svg>
           <span>{googleLoading ? "Connecting to Google..." : "Continue with Google"}</span>
-        </button>
+        </a>
 
         <div className="relative my-4">
           <div className="absolute inset-0 flex items-center">

@@ -1,5 +1,6 @@
 import "server-only";
-import { cache } from "react";
+import * as React from "react";
+const cache = React.cache || ((fn: any) => fn);
 import { cookies } from "next/headers";
 import { createHash, randomBytes } from "node:crypto";
 import { withAuth } from "@/lib/db/with-user";
@@ -42,30 +43,38 @@ export async function createSession(profileId: string): Promise<string> {
     `;
   });
 
-  const cookieStore = cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, rawToken, {
-    httpOnly: true,
-    secure: isCookieSecure(),
-    sameSite: "lax",
-    path: "/",
-    expires: expiresAt,
-  });
+  try {
+    const cookieStore = cookies();
+    cookieStore.set(SESSION_COOKIE_NAME, rawToken, {
+      httpOnly: true,
+      secure: isCookieSecure(),
+      sameSite: "lax",
+      path: "/",
+      expires: expiresAt,
+    });
+  } catch {
+    // Graceful fallback for non-request contexts (CLI scripts, background jobs, unit tests)
+  }
 
   return rawToken;
 }
 
 export async function destroySession(): Promise<void> {
-  const cookieStore = cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  try {
+    const cookieStore = cookies();
+    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
-  if (token) {
-    const tokenHash = hashToken(token);
-    await withAuth(async (sql) => {
-      await sql`DELETE FROM private.sessions WHERE token_hash = ${tokenHash}`;
-    });
+    if (token) {
+      const tokenHash = hashToken(token);
+      await withAuth(async (sql) => {
+        await sql`DELETE FROM private.sessions WHERE token_hash = ${tokenHash}`;
+      });
+    }
+
+    cookieStore.delete(SESSION_COOKIE_NAME);
+  } catch {
+    // Non-request context fallback
   }
-
-  cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
 export const getSessionProfile = cache(

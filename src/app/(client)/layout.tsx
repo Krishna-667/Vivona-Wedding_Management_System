@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/logo";
-import { getSessionProfile } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/permissions";
 import { signOutAction } from "@/app/actions/auth";
 import { ClientBottomNav } from "@/components/navigation/client-bottom-nav";
 import { ChangePasswordDialog } from "@/components/features/auth/change-password-dialog";
@@ -11,11 +10,7 @@ export default async function ClientLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSessionProfile();
-
-  if (!session) {
-    redirect("/login");
-  }
+  const session = await requireRole(["client", "admin", "employee"]);
 
   const clientNav = [
     { label: "Overview", href: "/client", icon: "🏰" },

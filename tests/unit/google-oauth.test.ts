@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { randomBytes, createHash } from "node:crypto";
-import { issueLocalGoogleAuthCode, verifyLocalGoogleAuthCode } from "@/lib/auth/google-local";
 
 describe("Google OAuth 2.0 PKCE & Security Verification", () => {
   it("generates a high-entropy PKCE code verifier and SHA-256 code challenge (RFC 7636)", () => {
@@ -75,30 +74,5 @@ describe("Google OAuth 2.0 PKCE & Security Verification", () => {
 
     expect(isAllowed(verifiedUser)).toBe(true);
     expect(isAllowed(unverifiedUser)).toBe(false);
-  });
-
-  it("issues and verifies cryptographically signed local authorization codes with state enforcement", () => {
-    const state = "valid_csrf_token_xyz";
-    const code = issueLocalGoogleAuthCode({
-      email: "prithitha24it@psnacet.edu.in",
-      name: "Prithith",
-      state,
-    });
-
-    expect(code.startsWith("local_")).toBe(true);
-
-    // Verify valid code and state
-    const verified = verifyLocalGoogleAuthCode(code, state);
-    expect(verified).not.toBeNull();
-    expect(verified?.email).toBe("prithitha24it@psnacet.edu.in");
-    expect(verified?.name).toBe("Prithith");
-
-    // Reject on mismatched CSRF state
-    const wrongState = verifyLocalGoogleAuthCode(code, "attacker_state");
-    expect(wrongState).toBeNull();
-
-    // Reject on tampered authorization code
-    const tampered = verifyLocalGoogleAuthCode(code.slice(0, -5) + "abcde", state);
-    expect(tampered).toBeNull();
   });
 });

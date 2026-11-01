@@ -1,30 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { withService } from "@/lib/db/with-user";
-import { createSession } from "@/lib/auth/session";
-import { verifyLocalGoogleAuthCode } from "@/lib/auth/google-local";
+import {
+  processGoogleOAuthCallback,
+  OAUTH_COOKIE_NAME,
+} from "@/lib/auth/google-oauth-service";
 
 export const dynamic = "force-dynamic";
-
-interface GoogleTokenResponse {
-  access_token?: string;
-  id_token?: string;
-  token_type?: string;
-  expires_in?: number;
-  error?: string;
-  error_description?: string;
-}
-
-interface GoogleUserInfo {
-  id: string;
-  email: string;
-  verified_email?: boolean;
-  email_verified?: boolean;
-  name: string;
-  given_name?: string;
-  family_name?: string;
-  picture?: string;
-}
 
 function getRequestOrigin(request: Request): string {
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
@@ -38,9 +19,9 @@ function getRequestOrigin(request: Request): string {
 }
 
 /**
- * Handles the OAuth 2.0 callback from Google.
- * Verifies state token against CSRF, authenticates the code,
- * provisions or links the client profile in PostgreSQL, and establishes a secure DB session.
+ * GET /api/auth/google/callback
+ * Handles OAuth callback, state verification, token exchange, ID token validation,
+ * identity linking according to Step 3 rules, session creation, and role redirection.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -49,174 +30,24 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
 
-  if (error) {
-    console.error("Google OAuth returned error:", error);
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("Google Sign-In was cancelled or denied.")}`, origin)
-    );
-  }
-
   const cookieStore = cookies();
-  const savedState = cookieStore.get("google_oauth_state")?.value;
-  const savedVerifier = cookieStore.get("google_oauth_verifier")?.value;
-  const savedRedirect = cookieStore.get("google_oauth_redirect")?.value || "/client";
+  const transactionId = cookieStore.get(OAUTH_COOKIE_NAME)?.value || null;
 
-  // Cleanup temporary OAuth cookies
-  cookieStore.delete("google_oauth_state");
-  cookieStore.delete("google_oauth_verifier");
-  cookieStore.delete("google_oauth_redirect");
+  // Always delete ephemeral OAuth transaction cookie
+  cookieStore.delete(OAUTH_COOKIE_NAME);
 
-  // Validate state against CSRF
-  if (!state || !savedState || state !== savedState) {
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("Invalid OAuth state token. Please try again.")}`, origin)
-    );
+  const result = await processGoogleOAuthCallback({
+    code,
+    state,
+    error,
+    transactionId,
+  });
+
+  if (!result.ok) {
+    const errorParam = encodeURIComponent(result.error);
+    return NextResponse.redirect(new URL(`/login?error=${errorParam}`, origin));
   }
 
-  if (!code) {
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("No authorization code returned from Google.")}`, origin)
-    );
-  }
-
-  try {
-    let email = "";
-    let fullName = "";
-    let avatarUrl: string | null = null;
-
-    // 1. Check if this is a signed local Google OAuth code
-    if (code.startsWith("local_")) {
-      const verified = verifyLocalGoogleAuthCode(code, savedState);
-      if (!verified) {
-        return NextResponse.redirect(
-          new URL(`/login?error=${encodeURIComponent("Invalid or expired Google authorization code.")}`, origin)
-        );
-      }
-      email = verified.email.toLowerCase().trim();
-      fullName = verified.name || "Client (Google Auth)";
-      avatarUrl = verified.avatarUrl || null;
-    } else {
-      // 2. Live Google Cloud Token Exchange
-      const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-
-      if (!clientId || !clientSecret) {
-        return NextResponse.redirect(
-          new URL(`/login?error=${encodeURIComponent("Google OAuth credentials not configured on server.")}`, origin)
-        );
-      }
-
-      const redirectUri = `${origin}/api/auth/google/callback`;
-
-      const tokenParams = new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      });
-
-      if (savedVerifier) {
-        tokenParams.set("code_verifier", savedVerifier);
-      }
-
-      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: tokenParams,
-      });
-
-      const tokenData = (await tokenRes.json()) as GoogleTokenResponse;
-
-      if (!tokenRes.ok || !tokenData.access_token) {
-        console.error("Failed to exchange Google OAuth code:", tokenData);
-        return NextResponse.redirect(
-          new URL(
-            `/login?error=${encodeURIComponent(
-              tokenData.error_description || "Failed to exchange authentication code with Google."
-            )}`,
-            origin
-          )
-        );
-      }
-
-      const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-      });
-
-      const googleUser = (await userinfoRes.json()) as GoogleUserInfo;
-
-      if (!userinfoRes.ok || !googleUser.email) {
-        console.error("Failed to fetch Google user profile:", googleUser);
-        return NextResponse.redirect(
-          new URL(`/login?error=${encodeURIComponent("Failed to fetch verified profile from Google.")}`, origin)
-        );
-      }
-
-      const isEmailVerified = googleUser.verified_email ?? googleUser.email_verified ?? false;
-      if (!isEmailVerified) {
-        return NextResponse.redirect(
-          new URL(
-            `/login?error=${encodeURIComponent(
-              "Your Google email is not verified. Please verify your Google account first."
-            )}`,
-            origin
-          )
-        );
-      }
-
-      email = googleUser.email.toLowerCase().trim();
-      fullName = googleUser.name || "Client (Google Auth)";
-      avatarUrl = googleUser.picture || null;
-    }
-
-    // 3. Provision or link client account in database (Rule 0.3: client role)
-    const profile = await withService(async (sql) => {
-      let [existing] = await sql`
-        SELECT id, email, role, full_name, avatar_url, is_active
-        FROM public.profiles
-        WHERE LOWER(email) = LOWER(${email})
-      `;
-
-      if (!existing) {
-        [existing] = await sql`
-          INSERT INTO public.profiles (email, full_name, avatar_url, role, is_active)
-          VALUES (${email}, ${fullName}, ${avatarUrl}, 'client', true)
-          RETURNING id, email, role, full_name, avatar_url, is_active
-        `;
-      } else if (avatarUrl && !existing.avatar_url) {
-        await sql`
-          UPDATE public.profiles
-          SET avatar_url = ${avatarUrl}, updated_at = NOW()
-          WHERE id = ${existing.id}
-        `;
-      }
-
-      return existing;
-    });
-
-    if (!profile.is_active) {
-      return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent("This account has been deactivated.")}`, origin)
-      );
-    }
-
-    // 4. Establish authenticated database-backed session
-    await createSession(profile.id);
-
-    // 5. Route to role-specific dashboard
-    let targetPath = savedRedirect.startsWith("/") ? savedRedirect : "/client";
-    if (profile.role === "admin") {
-      targetPath = "/admin";
-    } else if (profile.role === "employee") {
-      targetPath = "/employee";
-    }
-
-    return NextResponse.redirect(new URL(targetPath, origin));
-  } catch (err) {
-    console.error("Unexpected Google OAuth callback exception:", err);
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent("An unexpected error occurred during Google Sign-In.")}`, origin)
-    );
-  }
+  // Redirect strictly to the role-determined portal (never public home /)
+  return NextResponse.redirect(new URL(result.resolution.redirectTo, origin));
 }

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/logo";
-import { getSessionProfile } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/permissions";
 import { signOutAction } from "@/app/actions/auth";
 import { EmployeeBottomNav } from "@/components/navigation/employee-bottom-nav";
 import { ChangePasswordDialog } from "@/components/features/auth/change-password-dialog";
@@ -11,11 +10,7 @@ export default async function EmployeeLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSessionProfile();
-
-  if (!session || (session.profile.role !== "employee" && session.profile.role !== "admin")) {
-    redirect("/login");
-  }
+  const session = await requireRole(["employee", "admin"]);
 
   const navItems = [
     { label: "My Weddings", href: "/employee", icon: "🏰" },
